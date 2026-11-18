@@ -93,48 +93,34 @@ void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
 #ifdef PRINT_INSTRUCTION_INFO
   std::cout << std::hex << info->instruction_addr << " Next " << info->instruction_next_addr << " size "
             << (uint32_t)info->size << " taken " << (uint32_t)info->actually_taken << " target " << info->branch_target
-            << " asm " << std::string(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(insi->ins))) << std::endl;
+            << " asm " << info->st.pin_iclass << std::endl;
 #endif
 
   // TODO: Check whether we need to add this fix to memtrace fe
-  if (xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_FAR ||
-      xed_decoded_inst_get_iclass(insi->ins) == XED_ICLASS_RET_NEAR)
+  const DecodedInst* decoded = insi->decoded;
+  if (decoded->is_ret)
     info->actually_taken = 1;
 
+  // one fake address per memory operand, in operand order
   uint8_t ld = 0;
   uint8_t st = 0;
-  for (uint8_t op = 0; op < xed_decoded_inst_number_of_memory_operands(insi->ins); op++) {
+  for (uint8_t op = 0; op < decoded->num_mem_operands; op++) {
     uint64_t fake_addr = std::round(d(gen)) + offset;
-    if (xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
+    if (decoded->mem_read_mask & (1 << op))
       info->ld_vaddr[ld++] = fake_addr;
-    } else if (xed_decoded_inst_mem_read(insi->ins, op)) {
-      info->ld_vaddr[ld++] = fake_addr;
-    }
-    if (xed_decoded_inst_mem_written(insi->ins, op) && !insi->mem_used[op]) {
+    if (decoded->mem_written_mask & (1 << op))
       info->st_vaddr[st++] = fake_addr;
-    } else if (xed_decoded_inst_mem_written(insi->ins, op)) {
-      info->st_vaddr[st++] = fake_addr;
-    }
   }
 }
 
-int pt_ffwd(const xed_decoded_inst_t* ins) {
+int pt_ffwd(const InstInfo* insi) {
   if (!FAST_FORWARD) {
     return 0;
   }
-  if (XED_INS_Opcode(ins) == XED_ICLASS_XCHG && XED_INS_OperandReg(ins, 0) == XED_REG_RCX &&
-      XED_INS_OperandReg(ins, 1) == XED_REG_RCX) {
+  if (!insi->fake_inst && insi->decoded->is_roi_marker) {
     return 0;
   }
   return 1;
-}
-
-int pt_roi(const xed_decoded_inst_t* ins) {
-  if (XED_INS_Opcode(ins) == XED_ICLASS_XCHG && XED_INS_OperandReg(ins, 0) == XED_REG_RCX &&
-      XED_INS_OperandReg(ins, 1) == XED_REG_RCX) {
-    return 1;
-  }
-  return 0;
 }
 
 int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
@@ -158,14 +144,13 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
     return 1;
   }
 
+  const DecodedInst* decoded = insi->decoded;
   init_ctype_pin_inst(pt_next_pi);
+  pt_next_pi->st = decoded->inst;
   pt_fill_in_dynamic_info(pt_next_pi, insi);
-  fill_in_basic_info(pt_next_pi, insi->ins);
+  if (decoded->cf_sets_target)
+    pt_next_pi->st.branch_target = decoded->inst.branch_target;  // static direct target, as fill_in_cf_info set it
   assert(pt_next_pi->instruction_next_addr && "instruction_next_addr not set");
-  uint32_t max_op_width = add_dependency_info(pt_next_pi, insi->ins);
-  fill_in_simd_info(pt_next_pi, insi->ins, max_op_width);
-  apply_x87_bug_workaround(pt_next_pi, insi->ins);
-  fill_in_cf_info(pt_next_pi, insi->ins);
   pt_next_pi->actually_taken = insi->taken;
   // TODO: This happens for PT for example when there is some traces missing,
   // Check whether this can also happen for memtrace fe
@@ -176,10 +161,8 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
   }
   /* std::cout << "branch target for PC: " << pt_next_pi->instruction_addr << " is: " << pt_next_pi->branch_target <<
    * std::endl; */
-  print_err_if_invalid(pt_next_pi, insi->ins);
-
   // End of ROI
-  if (pt_roi(insi->ins))
+  if (decoded->is_roi_marker)
     return 0;
 
   return 1;
@@ -225,7 +208,7 @@ void pt_setup(uns proc_id) {
   std::string path(pt_trace_files[proc_id]);
   std::string trace(path);
 
-  pt_trace_readers[proc_id] = new TraceReaderPT(trace);
+  pt_trace_readers[proc_id] = new TraceReaderPT(trace, proc_id);
 
   // FFWD
   const InstInfo* insi = pt_trace_readers[proc_id]->nextInstruction();
@@ -234,7 +217,7 @@ void pt_setup(uns proc_id) {
   if (FAST_FORWARD) {
     std::cout << "Enter fast forward " << pt_ins_id << std::endl;
 
-    while (!insi->valid || pt_ffwd(insi->ins)) {
+    while (!insi->valid || pt_ffwd(insi)) {
       insi = pt_trace_readers[proc_id]->nextInstruction();
       pt_ins_id++;
       if ((pt_ins_id % 10000000) == 0)

@@ -40,9 +40,8 @@ DecodedInst* decode_cache_find(uns proc_id, uint64_t pc) {
   return it == decode_cache[proc_id].end() ? nullptr : &it->second;
 }
 
-DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const ctype_pin_inst_static& inst, int num_mem_ops,
-                                 bool unknown_type, bool is_rep) {
-  auto inserted = decode_cache[proc_id].emplace(pc, DecodedInst{inst, num_mem_ops, unknown_type, is_rep});
+DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const DecodedInst& decoded) {
+  auto inserted = decode_cache[proc_id].emplace(pc, decoded);
   ASSERT(proc_id, inserted.second);
   return &inserted.first->second;
 }

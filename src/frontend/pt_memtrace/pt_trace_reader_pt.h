@@ -255,7 +255,7 @@ class TraceReaderPT : public TraceReader {
       bool changes_cf = inserted_nop ? false : orig_changes_cf;
       bool incorrect_branch = !inserted_nop && orig_is_direct_br && next_line.pc != orig_direct_target &&
                               next_line.pc != (ins.pc + orig_size);
-      uint8_t prior_size = inserted_nop ? patch_inst_.size : orig_size;
+      uint8_t prior_size = inserted_nop ? patch_inst_.st.size : orig_size;
 
       if (_prior.valid && (!changes_cf || orig_category == XC(SYSCALL) || incorrect_branch) &&
           next_line.pc != _prior.pc + prior_size) {
@@ -304,7 +304,7 @@ class TraceReaderPT : public TraceReader {
     }
     if (_prior.valid) {
       if (_prior.fake_inst)
-        _prior.taken = _info.pc != (_prior.pc + _prior.info->size);
+        _prior.taken = _info.pc != (_prior.pc + _prior.info->st.size);
       else
         _prior.taken = _info.pc != (_prior.pc + XED_INS_Size(_prior.ins));
     }

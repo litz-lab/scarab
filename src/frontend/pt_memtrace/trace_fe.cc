@@ -70,7 +70,7 @@ Flag buf_map_find(uns proc_id, Addr line_addr) {
 // inserts the inst written to write_ptr location
 void buf_map_insert(uns proc_id) {
   TraceBufState &state = trace_buf_state[proc_id];
-  Addr line_addr = state.circ_buf[state.wrptr].instruction_addr & CLINE;
+  Addr line_addr = state.circ_buf[state.wrptr].st.instruction_addr & CLINE;
   auto it = state.buf_map.find(line_addr);
   if (it != state.buf_map.end()) {
     it->second++;
@@ -82,7 +82,7 @@ void buf_map_insert(uns proc_id) {
 
 void buf_map_remove(uns proc_id) {
   TraceBufState &state = trace_buf_state[proc_id];
-  Addr line_addr = state.circ_buf[state.rdptr].instruction_addr & CLINE;
+  Addr line_addr = state.circ_buf[state.rdptr].st.instruction_addr & CLINE;
   auto it = state.buf_map.find(line_addr);
   assert(it != state.buf_map.end());
   if (it->second > 1) {
@@ -97,8 +97,8 @@ void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst
   auto op_iter = pc_to_inst[proc_id].find(*off_path_addr);
   if (op_iter != pc_to_inst[proc_id].end()) {
     *inst = op_iter->second;
-    (*off_path_addr) += inst->size;
-    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->instruction_addr, inst->size);
+    (*off_path_addr) += inst->st.size;
+    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->st.instruction_addr, inst->st.size);
   } else {
     *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
     (*off_path_addr) += DUMMY_NOP_SIZE;
@@ -124,45 +124,45 @@ Flag ctype_pin_inst_same_mem_vaddr(ctype_pin_inst inst_a, ctype_pin_inst inst_b)
 void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
   // uint64_t inst_uid;  // unique ID produced by the frontend
 
-  ASSERT(proc_id, inst_a.instruction_addr == inst_b.instruction_addr);
-  ASSERT(proc_id, inst_a.size == inst_b.size);
-  ASSERT(proc_id, inst_a.inst_binary_msb == inst_b.inst_binary_msb);
-  ASSERT(proc_id, inst_a.inst_binary_lsb == inst_b.inst_binary_lsb);
-  ASSERT(proc_id, inst_a.op_type == inst_b.op_type);
-  ASSERT(proc_id, inst_a.cf_type == inst_b.cf_type);
-  ASSERT(proc_id, inst_a.is_fp == inst_b.is_fp);
-  ASSERT(proc_id, inst_a.true_op_type == inst_b.true_op_type);
-  ASSERT(proc_id, inst_a.num_src_regs == inst_b.num_src_regs);
-  ASSERT(proc_id, inst_a.num_dst_regs == inst_b.num_dst_regs);
-  ASSERT(proc_id, inst_a.num_ld1_addr_regs == inst_b.num_ld1_addr_regs);
-  ASSERT(proc_id, inst_a.num_ld2_addr_regs == inst_b.num_ld2_addr_regs);
-  ASSERT(proc_id, inst_a.num_st_addr_regs == inst_b.num_st_addr_regs);
+  ASSERT(proc_id, inst_a.st.instruction_addr == inst_b.st.instruction_addr);
+  ASSERT(proc_id, inst_a.st.size == inst_b.st.size);
+  ASSERT(proc_id, inst_a.st.inst_binary_msb == inst_b.st.inst_binary_msb);
+  ASSERT(proc_id, inst_a.st.inst_binary_lsb == inst_b.st.inst_binary_lsb);
+  ASSERT(proc_id, inst_a.st.op_type == inst_b.st.op_type);
+  ASSERT(proc_id, inst_a.st.cf_type == inst_b.st.cf_type);
+  ASSERT(proc_id, inst_a.st.is_fp == inst_b.st.is_fp);
+  ASSERT(proc_id, inst_a.st.true_op_type == inst_b.st.true_op_type);
+  ASSERT(proc_id, inst_a.st.num_src_regs == inst_b.st.num_src_regs);
+  ASSERT(proc_id, inst_a.st.num_dst_regs == inst_b.st.num_dst_regs);
+  ASSERT(proc_id, inst_a.st.num_ld1_addr_regs == inst_b.st.num_ld1_addr_regs);
+  ASSERT(proc_id, inst_a.st.num_ld2_addr_regs == inst_b.st.num_ld2_addr_regs);
+  ASSERT(proc_id, inst_a.st.num_st_addr_regs == inst_b.st.num_st_addr_regs);
 
   for (uns i = 0; i < MAX_SRC_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.src_regs[i] == inst_b.src_regs[i]);
+    ASSERT(proc_id, inst_a.st.src_regs[i] == inst_b.st.src_regs[i]);
   }
 
   for (uns i = 0; i < MAX_DST_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.dst_regs[i] == inst_b.dst_regs[i]);
+    ASSERT(proc_id, inst_a.st.dst_regs[i] == inst_b.st.dst_regs[i]);
   }
 
   for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.ld1_addr_regs[i] == inst_b.ld1_addr_regs[i]);
+    ASSERT(proc_id, inst_a.st.ld1_addr_regs[i] == inst_b.st.ld1_addr_regs[i]);
   }
 
   for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.ld2_addr_regs[i] == inst_b.ld2_addr_regs[i]);
+    ASSERT(proc_id, inst_a.st.ld2_addr_regs[i] == inst_b.st.ld2_addr_regs[i]);
   }
 
   for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.st_addr_regs[i] == inst_b.st_addr_regs[i]);
+    ASSERT(proc_id, inst_a.st.st_addr_regs[i] == inst_b.st.st_addr_regs[i]);
   }
 
-  ASSERT(proc_id, inst_a.num_simd_lanes == inst_b.num_simd_lanes);
-  ASSERT(proc_id, inst_a.lane_width_bytes == inst_b.lane_width_bytes);
-  ASSERT(proc_id, inst_a.num_ld == inst_b.num_ld);
-  ASSERT(proc_id, inst_a.num_st == inst_b.num_st);
-  ASSERT(proc_id, inst_a.has_immediate == inst_b.has_immediate);
+  ASSERT(proc_id, inst_a.st.num_simd_lanes == inst_b.st.num_simd_lanes);
+  ASSERT(proc_id, inst_a.st.lane_width_bytes == inst_b.st.lane_width_bytes);
+  ASSERT(proc_id, inst_a.st.num_ld == inst_b.st.num_ld);
+  ASSERT(proc_id, inst_a.st.num_st == inst_b.st.num_st);
+  ASSERT(proc_id, inst_a.st.has_immediate == inst_b.st.has_immediate);
 
   for (uns i = 0; i < MAX_LD_NUM; i++) {
     ASSERT(proc_id, inst_a.ld_vaddr[i] == inst_b.ld_vaddr[i]);
@@ -172,33 +172,33 @@ void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_in
     ASSERT(proc_id, inst_a.st_vaddr[i] == inst_b.st_vaddr[i]);
   }
 
-  ASSERT(proc_id, inst_a.ld_size == inst_b.ld_size);
-  ASSERT(proc_id, inst_a.st_size == inst_b.st_size);
-  ASSERT(proc_id, inst_a.branch_target == inst_b.branch_target);
+  ASSERT(proc_id, inst_a.st.ld_size == inst_b.st.ld_size);
+  ASSERT(proc_id, inst_a.st.st_size == inst_b.st.st_size);
+  ASSERT(proc_id, inst_a.st.branch_target == inst_b.st.branch_target);
   ASSERT(proc_id, inst_a.actually_taken == inst_b.actually_taken);
 
-  ASSERT(proc_id, inst_a.is_string == inst_b.is_string);
-  ASSERT(proc_id, inst_a.is_call == inst_b.is_call);
-  ASSERT(proc_id, inst_a.is_move == inst_b.is_move);
-  ASSERT(proc_id, inst_a.is_prefetch == inst_b.is_prefetch);
+  ASSERT(proc_id, inst_a.st.is_string == inst_b.st.is_string);
+  ASSERT(proc_id, inst_a.st.is_call == inst_b.st.is_call);
+  ASSERT(proc_id, inst_a.st.is_move == inst_b.st.is_move);
+  ASSERT(proc_id, inst_a.st.is_prefetch == inst_b.st.is_prefetch);
 
-  ASSERT(proc_id, inst_a.has_push == inst_b.has_push);
-  ASSERT(proc_id, inst_a.has_pop == inst_b.has_pop);
-  ASSERT(proc_id, inst_a.is_ifetch_barrier == inst_b.is_ifetch_barrier);
-  ASSERT(proc_id, inst_a.is_lock == inst_b.is_lock);
+  ASSERT(proc_id, inst_a.st.has_push == inst_b.st.has_push);
+  ASSERT(proc_id, inst_a.st.has_pop == inst_b.st.has_pop);
+  ASSERT(proc_id, inst_a.st.is_ifetch_barrier == inst_b.st.is_ifetch_barrier);
+  ASSERT(proc_id, inst_a.st.is_lock == inst_b.st.is_lock);
 
-  ASSERT(proc_id, inst_a.is_repeat == inst_b.is_repeat);
-  ASSERT(proc_id, inst_a.is_simd == inst_b.is_simd);
-  ASSERT(proc_id, inst_a.is_gather_scatter == inst_b.is_gather_scatter);
-  ASSERT(proc_id, inst_a.is_sentinel == inst_b.is_sentinel);
+  ASSERT(proc_id, inst_a.st.is_repeat == inst_b.st.is_repeat);
+  ASSERT(proc_id, inst_a.st.is_simd == inst_b.st.is_simd);
+  ASSERT(proc_id, inst_a.st.is_gather_scatter == inst_b.st.is_gather_scatter);
+  ASSERT(proc_id, inst_a.st.is_sentinel == inst_b.st.is_sentinel);
 
-  ASSERT(proc_id, inst_a.fake_inst == inst_b.fake_inst);
+  ASSERT(proc_id, inst_a.st.fake_inst == inst_b.st.fake_inst);
   ASSERT(proc_id, inst_a.exit == inst_b.exit);
-  ASSERT(proc_id, inst_a.fake_inst_reason == inst_b.fake_inst_reason);
+  ASSERT(proc_id, inst_a.st.fake_inst_reason == inst_b.st.fake_inst_reason);
   ASSERT(proc_id, inst_a.instruction_next_addr == inst_b.instruction_next_addr);
 
   for (uns i = 0; i < 16; i++) {
-    ASSERT(proc_id, inst_a.pin_iclass[i] == inst_b.pin_iclass[i]);
+    ASSERT(proc_id, inst_a.st.pin_iclass[i] == inst_b.st.pin_iclass[i]);
   }
 }
 
@@ -270,36 +270,36 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
-      } else if (!next_onpath_pi[proc_id].is_trace_patch) {
-        uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
+      } else if (!next_onpath_pi[proc_id].st.is_trace_patch) {
+        uint64_t addr = next_onpath_pi[proc_id].st.instruction_addr;
         auto it = pc_to_inst[proc_id].find(addr);
         if (it == pc_to_inst[proc_id].end()) {
           pc_to_inst[proc_id].emplace(addr, next_onpath_pi[proc_id]);
-        } else if (next_onpath_pi[proc_id].encoding_is_new) {
+        } else if (next_onpath_pi[proc_id].st.encoding_is_new) {
           STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
           it->second = next_onpath_pi[proc_id];
-        } else if (next_onpath_pi[proc_id].inst_binary_lsb != it->second.inst_binary_lsb ||
-                   next_onpath_pi[proc_id].inst_binary_msb != it->second.inst_binary_msb) {
+        } else if (next_onpath_pi[proc_id].st.inst_binary_lsb != it->second.st.inst_binary_lsb ||
+                   next_onpath_pi[proc_id].st.inst_binary_msb != it->second.st.inst_binary_msb) {
           DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
-                next_onpath_pi[proc_id].size, next_onpath_pi[proc_id].inst_binary_lsb,
-                next_onpath_pi[proc_id].inst_binary_msb);
+                next_onpath_pi[proc_id].st.size, next_onpath_pi[proc_id].st.inst_binary_lsb,
+                next_onpath_pi[proc_id].st.inst_binary_msb);
           // Handle jitted code
           STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
           it->second = next_onpath_pi[proc_id];
         } else if (next_onpath_pi[proc_id].instruction_next_addr != it->second.instruction_next_addr) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
-          if (next_onpath_pi[proc_id].cf_type) {
-            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == it->second.cf_type);
+          ASSERT(proc_id, next_onpath_pi[proc_id].st.op_type == it->second.st.op_type);
+          if (next_onpath_pi[proc_id].st.cf_type) {
+            ASSERT(proc_id, next_onpath_pi[proc_id].st.cf_type == it->second.st.cf_type);
             // This can fail for java pt traces
             // ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
             //                 next_onpath_pi[proc_id].cf_type >= CF_IBR ||
             //                 next_onpath_pi[proc_id].last_inst_from_trace);
           }
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].st.op_type);
           it->second = next_onpath_pi[proc_id];
         } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], it->second)) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].op_type);
+          ASSERT(proc_id, next_onpath_pi[proc_id].st.op_type == it->second.st.op_type);
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].st.op_type);
           it->second = next_onpath_pi[proc_id];
         } else {
           if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
@@ -321,7 +321,7 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
     }
   }
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode_,
-        next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_->instruction_addr);
+        next_onpath_pi[proc_id].st.instruction_addr, next_offpath_pi_->st.instruction_addr);
 }
 
 Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id) {
@@ -341,8 +341,8 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
   off_path_mode[proc_id][bp_id] = true;
   off_path_addr[proc_id][bp_id] = fetch_addr;
   off_path_generate_inst(proc_id, &off_path_addr[proc_id][bp_id], &next_offpath_pi[proc_id][bp_id]);
-  DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr,
-        next_offpath_pi[proc_id][bp_id].instruction_addr);
+  DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].st.instruction_addr,
+        next_offpath_pi[proc_id][bp_id].st.instruction_addr);
 }
 
 void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
@@ -360,7 +360,7 @@ void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   while (!uop_generator_get_eom(proc_id)) {
     uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id][bp_id]);
   }
-  DEBUG(proc_id, "Recover CF:%lx ", next_onpath_pi[proc_id].instruction_addr);
+  DEBUG(proc_id, "Recover CF:%lx ", next_onpath_pi[proc_id].st.instruction_addr);
 }
 
 void ext_trace_retire(uns proc_id, uns64 inst_uid) {
@@ -369,7 +369,7 @@ void ext_trace_retire(uns proc_id, uns64 inst_uid) {
 }
 
 Addr ext_trace_next_fetch_addr(uns proc_id) {
-  return next_onpath_pi[proc_id].instruction_addr;
+  return next_onpath_pi[proc_id].st.instruction_addr;
 }
 
 void ext_trace_init() {
@@ -464,7 +464,7 @@ typedef struct basic_block_info {
     std::vector<ctype_pin_inst>::size_type size =
         ins_list.size() < rhs.ins_list.size() ? ins_list.size() : rhs.ins_list.size();
     for (unsigned i = 0; i < size; i++) {
-      if (ins_list[i].instruction_addr < rhs.ins_list[i].instruction_addr) {
+      if (ins_list[i].st.instruction_addr < rhs.ins_list[i].st.instruction_addr) {
         return true;
       }
     }
@@ -482,7 +482,7 @@ typedef struct basic_block_info {
     }
 
     for (unsigned i = 0; i < this->ins_list.size(); i++) {
-      if (this->ins_list[i].instruction_addr != bb.ins_list[i].instruction_addr) {
+      if (this->ins_list[i].st.instruction_addr != bb.ins_list[i].st.instruction_addr) {
         return true;
       }
     }
@@ -519,8 +519,8 @@ void output_counts(uint64_t num_of_segments, bb_counts counts_dynamic, bb_counts
       for (unsigned j = 0; j < i->second.size(); j++) {
         printf("[%ld]: size %ld, freq %ld\n", i->second[j].bb_id, i->second[j].ins_list.size(), i->second[j].freq);
         for (unsigned k = 0; k < i->second[j].ins_list.size(); k++) {
-          printf("%s: %u, %d\n", hexstr64s(i->second[j].ins_list[k].instruction_addr),
-                 i->second[j].ins_list[k].true_op_type, i->second[j].ins_list[k].last_inst_from_trace);
+          printf("%s: %u, %d\n", hexstr64s(i->second[j].ins_list[k].st.instruction_addr),
+                 i->second[j].ins_list[k].st.true_op_type, i->second[j].ins_list[k].last_inst_from_trace);
         }
       }
     }
@@ -591,19 +591,19 @@ void ext_trace_extract_basic_block_vectors() {
   ctype_pin_inst *inst = &next_onpath_pi[proc_id];
   int success = true;
 
-  printf("read from initialization: %p\n", (void *)(inst->instruction_addr));
+  printf("read from initialization: %p\n", (void*)(inst->st.instruction_addr));
 
   // continue till trace end
   while (success) {
     if (inst->actually_taken) {
-      ASSERT(proc_id, inst->cf_type);
-      op_taken_count[inst->cf_type]++;
+      ASSERT(proc_id, inst->st.cf_type);
+      op_taken_count[inst->st.cf_type]++;
     }
-    if (inst->instruction_next_addr != inst->instruction_addr + inst->size) {
-      if (!inst->cf_type && !inst->is_repeat && !inst->last_inst_from_trace) {
-        fprintf(stderr, "the cf change is not due to cf or rep or trace end at %p\n", (void *)inst->instruction_addr);
+    if (inst->instruction_next_addr != inst->st.instruction_addr + inst->st.size) {
+      if (!inst->st.cf_type && !inst->st.is_repeat && !inst->last_inst_from_trace) {
+        fprintf(stderr, "the cf change is not due to cf or rep or trace end at %p\n", (void*)inst->st.instruction_addr);
       }
-      ASSERT(proc_id, inst->cf_type || inst->is_repeat || inst->last_inst_from_trace);
+      ASSERT(proc_id, inst->st.cf_type || inst->st.is_repeat || inst->last_inst_from_trace);
     }
 
     // add to current basic block
@@ -614,15 +614,15 @@ void ext_trace_extract_basic_block_vectors() {
     // increment fetched count if it is fetched
     if (inst->fetched_instruction) {
       // increment unique inst frequency
-      footprint[inst->instruction_addr]++;
+      footprint[inst->st.instruction_addr]++;
       cur_bb.inst_count_fetched++;
     }
 
     // read the next instruction from the trace, which overwrites inst
     success = trace_read(proc_id, inst);
 
-    if (cur_bb.ins_list.back().is_repeat && !inst->is_repeat) {
-      ASSERT(proc_id, cur_bb.ins_list.back().instruction_addr != inst->instruction_addr);
+    if (cur_bb.ins_list.back().st.is_repeat && !inst->st.is_repeat) {
+      ASSERT(proc_id, cur_bb.ins_list.back().st.instruction_addr != inst->st.instruction_addr);
     }
 
     // decide if it's the end of current basic block
@@ -634,10 +634,10 @@ void ext_trace_extract_basic_block_vectors() {
     // note that the next inst is available if success
     // if so, find the frequency counter and increment
 
-    if (cur_bb.ins_list.back().cf_type || !success || (!cur_bb.ins_list.back().is_repeat && inst->is_repeat) ||
-        cur_bb.ins_list.back().is_repeat) {
+    if (cur_bb.ins_list.back().st.cf_type || !success || (!cur_bb.ins_list.back().st.is_repeat && inst->st.is_repeat) ||
+        cur_bb.ins_list.back().st.is_repeat) {
       std::unordered_map<uint64_t, basic_block_info>::iterator map_lookup =
-          bb_map.find(cur_bb.ins_list.front().instruction_addr);
+          bb_map.find(cur_bb.ins_list.front().st.instruction_addr);
 
       // std::ofstream cinstf;
       // cinstf.open("cinst.log", std::ofstream::out | std::ofstream::app);
@@ -653,7 +653,7 @@ void ext_trace_extract_basic_block_vectors() {
         cur_bb.bb_id = map_lookup->second.bb_id;
 
         // sanity check: are they the same?
-        auto bb_key = cur_bb.ins_list.front().instruction_addr;
+        auto bb_key = cur_bb.ins_list.front().st.instruction_addr;
         bool find = false;
         // bb_identity_map is cleared at segment boundary
         // so the sieze could be zero
@@ -673,7 +673,7 @@ void ext_trace_extract_basic_block_vectors() {
           if (bb_identity_map[bb_key].size() > 1) {
             for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
               fprintf(stderr, "[%lu]: ad: %p, op: %d\n", map_lookup->second.bb_id,
-                      (void *)cur_bb.ins_list[i].instruction_addr, cur_bb.ins_list[i].true_op_type);
+                      (void*)cur_bb.ins_list[i].st.instruction_addr, cur_bb.ins_list[i].st.true_op_type);
             }
             fprintf(stderr, "DUP bb detected%s\n", success ? "" : " at trace end");
           }
@@ -690,17 +690,17 @@ void ext_trace_extract_basic_block_vectors() {
         counts_as_built.fetched_size += cur_bb.inst_count_fetched;
 
         // enter bb map
-        bb_map[cur_bb.ins_list.front().instruction_addr] = cur_bb;
+        bb_map[cur_bb.ins_list.front().st.instruction_addr] = cur_bb;
         // sanity check
         cur_bb.freq++;
-        bb_identity_map[cur_bb.ins_list.front().instruction_addr].push_back(cur_bb);
-        ASSERT(proc_id, bb_identity_map[cur_bb.ins_list.front().instruction_addr].size() == 1);
+        bb_identity_map[cur_bb.ins_list.front().st.instruction_addr].push_back(cur_bb);
+        ASSERT(proc_id, bb_identity_map[cur_bb.ins_list.front().st.instruction_addr].size() == 1);
 
         // fprintf(stderr, "======================\n");
         static int bb_built_count = 0;
         for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
-          fprintf(stderr, "[%d]: ad: %p, op: %d\n", bb_built_count, (void *)cur_bb.ins_list[i].instruction_addr,
-                  cur_bb.ins_list[i].true_op_type);
+          fprintf(stderr, "[%d]: ad: %p, op: %d\n", bb_built_count, (void*)cur_bb.ins_list[i].st.instruction_addr,
+                  cur_bb.ins_list[i].st.true_op_type);
         }
         bb_built_count++;
         fprintf(stderr, "new bb detected: %d\n", bb_built_count);
@@ -807,7 +807,7 @@ void ext_trace_extract_basic_block_vectors() {
           fingerprint[cur_bb.bb_id] += to_last_vector_count;
         } else {
           // TRACE_BBV_DISTRIBUTED_MODE
-          fingerprint[cur_bb.ins_list.front().instruction_addr] += to_last_vector_count;
+          fingerprint[cur_bb.ins_list.front().st.instruction_addr] += to_last_vector_count;
         }
       }
 
@@ -843,7 +843,7 @@ void ext_trace_extract_basic_block_vectors() {
             fingerprint.insert(std::make_pair(cur_bb.bb_id, to_new_vector_count));
           } else {
             // TRACE_BBV_DISTRIBUTED_MODE
-            uint64_t bb_addr = cur_bb.ins_list.front().instruction_addr;
+            uint64_t bb_addr = cur_bb.ins_list.front().st.instruction_addr;
             fingerprint.insert(std::make_pair(bb_addr, to_new_vector_count));
           }
 

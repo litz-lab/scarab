@@ -54,6 +54,7 @@ struct InstInfo {
   union {
     const xed_decoded_inst_t* ins = nullptr;  // XED info
     const ctype_pin_inst* info;
+    const ctype_pin_inst_static* static_info;  // memtrace: decode-cache entry or a reader patch
   };
 
   uint64_t pid = 0;     // process ID

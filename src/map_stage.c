@@ -251,6 +251,9 @@ void update_map_stage(Stage_Data* src_sd) {
 static inline void stage_process_op(Op* op) {
   ASSERT(map->proc_id, map->proc_id == td->proc_id);
 
+  if (op->uop->cf_type == CF_CBR)
+    STAT_EVENT(op->proc_id, op->uop->num_src_regs ? MAP_CBR_WITH_SRC_REGS : MAP_CBR_NO_SRC_REGS);
+
   /* register renaming allocation */
   reg_file_rename(op);
 

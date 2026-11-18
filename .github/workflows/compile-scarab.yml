@@ -41,6 +41,19 @@ jobs:
       run_lint: true
       scarab_ref: ${{ github.sha }}
 
+  build-and-run-scarab-pt:
+    ########################################################
+    # Job: PT frontend run (opt), beside the memtrace run above.
+    # Pass/fail only: its IPC is not compared with dbg or
+    # recorded in the perf baseline.
+    ########################################################
+    if: github.event_name == 'pull_request' || github.repository == 'litz-lab/scarab'
+    uses: ./.github/workflows/scarab-sim.yml
+    with:
+      sci_id: top_simpoint
+      pt_workload: wordpress
+      scarab_ref: ${{ github.sha }}
+
   compare-ipc:
     ########################################################
     # Job: ensure opt and dbg IPC match

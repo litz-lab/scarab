@@ -66,6 +66,8 @@ DEF_PARAM( memtrace_roi_end             , MEMTRACE_ROI_END          , uns64    ,
 /* Honor the roi begin/end marker instructions (XCHG rbx,rbx / rdx,rdx) in the trace: reset stats at begin, dump .roi.N at end. Off for whole-segment (SimPoint) runs. */
 DEF_PARAM( roi_marker_dump              , ROI_MARKER_DUMP           , Flag     , Flag    , TRUE     ,       )
 DEF_PARAM( full_warmup                  , FULL_WARMUP               , uns64    , uns64   , 0        ,       )
+/* AsmDB-style per-PC attribution over the measured region (after full_warmup): writes pcprof.csv + pcprof_summary.txt. Off: no effect on simulation. */
+DEF_PARAM( pc_profile                   , PC_PROFILE                , Flag     , Flag    , FALSE    ,       )
 DEF_PARAM( warmup                       , WARMUP                    , uns64    , uns64   , 0        ,       )
 DEF_PARAM( heartbeat_interval           , HEARTBEAT_INTERVAL        , uns    , uns       , 1000000  ,       ) 
 DEF_PARAM( num_heartbeats               , NUM_HEARTBEATS            , uns    , uns       , 0        ,       ) 

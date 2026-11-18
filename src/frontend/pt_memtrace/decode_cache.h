@@ -42,12 +42,26 @@ struct DecodedInst {
   int num_mem_ops;    // memory records the trace delivers after the instruction record
   bool unknown_type;  // no bytes to decode: inst is a NOP of the reported size
   bool is_rep;
+
+  // PT only: what the PT reader and pt_fe need from the XED decode, so they never re-decode
+  uint8_t trace_patch;       // TracePatch: how the record was repaired before decoding
+  bool is_nop_category;      // XED_CATEGORY_NOP
+  bool is_syscall_category;  // XED_CATEGORY_SYSCALL
+  bool is_taken_category;    // unconditional/conditional branch, call or return
+  bool changes_cf;           // XED_INS_ChangeControlFlow
+  bool is_direct_br;         // XED_INS_IsDirectBranchOrCall
+  bool cf_sets_target;       // fill_in_cf_info set inst.branch_target (direct branch path)
+  bool is_ret;               // RET_NEAR / RET_FAR
+  bool is_roi_marker;        // xchg rcx, rcx
+  uint64_t direct_target;    // valid if is_direct_br
+  uint8_t num_mem_operands;  // all XED memory operands, used or not
+  uint8_t mem_read_mask;     // bit i: memory operand i is read
+  uint8_t mem_written_mask;  // bit i: memory operand i is written
 };
 
 // Per core: each core's trace has its own address space. Pointers stay valid until erased.
 DecodedInst* decode_cache_find(uns proc_id, uint64_t pc);
-DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const ctype_pin_inst_static& inst, int num_mem_ops,
-                                 bool unknown_type, bool is_rep);
+DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const DecodedInst& decoded);
 void decode_cache_erase(uns proc_id, uint64_t pc);
 
 #endif

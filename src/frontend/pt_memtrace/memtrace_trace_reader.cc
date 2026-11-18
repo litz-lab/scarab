@@ -63,7 +63,7 @@ TraceReader::TraceReader() : trace_ready_(false), skipped_(0), buf_size_(0) {
 
 // Trace Reader
 TraceReader::TraceReader(const std::string& _trace, uint32_t _buf_size)
-    : trace_ready_(false), warn_not_found_(1), skipped_(0), buf_size_(_buf_size) {
+    : trace_ready_(false), skipped_(0), buf_size_(_buf_size) {
 }
 
 TraceReader::~TraceReader() {
@@ -91,7 +91,7 @@ void TraceReader::init(const std::string& _trace) {
 
   // Clear the 'invalid' record (memset() would do too)
   invalid_info_.pc = 0;
-  invalid_info_.ins = nullptr;
+  invalid_info_.decoded = nullptr;
   invalid_info_.pid = 0;
   invalid_info_.tid = 0;
   invalid_info_.target = 0;
@@ -113,85 +113,6 @@ void TraceReader::init(const std::string& _trace) {
 void TraceReader::traceFileIs(const std::string& _trace) {
   trace_ = _trace;
   trace_ready_ = initTrace();
-}
-
-void TraceReader::fillCache(uint64_t _vAddr, uint8_t _reported_size, uint8_t* inst_bytes) {
-  assert(!has_trace_encodings_ || inst_bytes != NULL);
-  uint64_t size;
-  uint8_t* loc;
-  if (inst_bytes != NULL || locationForVAddr(_vAddr, &loc, &size)) {
-    xed_map_.emplace(_vAddr,
-                     make_tuple(0, false, false, false, make_unique<xed_decoded_inst_t>(), (uint8_t)TRACE_PATCH_NONE));
-    xed_decoded_inst_t* ins = get<MAP_XED>(xed_map_.at(_vAddr)).get();
-    xed_decoded_inst_zero_set_mode(ins, &xed_state_);
-    if (inst_bytes != NULL) {
-      loc = inst_bytes;
-    }
-    xed_error_enum_t res;
-    res = xed_decode(ins, loc, _reported_size);
-    if (res != XED_ERROR_NONE) {
-      // Only the PT reader calls fillCache (memtrace decodes in its own reader and
-      // keeps its assert). Some PT traces hold records whose bytes are not valid
-      // x86-64 (#499); the next record still starts right after them, so a NOP of
-      // the same length keeps the PC stream and instruction count unchanged.
-      if (num_decode_nops_ < 10) {
-        warn("Undecodable trace record at 0x%lx (%u bytes, XED %s), replaced with a same-length NOP%s\n", _vAddr,
-             _reported_size, xed_error_enum_t2str(res), num_decode_nops_ == 9 ? "; suppressing further messages" : "");
-      }
-      num_decode_nops_++;
-      *ins = *makeNop(_reported_size);
-      get<MAP_PATCH>(xed_map_.at(_vAddr)) = TRACE_PATCH_NOP;
-    }
-    // Record if this instruction requires memory operands, since the trace
-    // will deliver it in additional pieces
-    uint32_t n_mem_ops = xed_decoded_inst_number_of_memory_operands(ins);
-    if (n_mem_ops > 0) {
-      // NOPs are special and don't actually cause memory accesses
-      xed_category_enum_t category = xed_decoded_inst_get_category(ins);
-      if (category != XED_CATEGORY_NOP && category != XED_CATEGORY_WIDENOP) {
-        uint32_t n_used_mem_ops = 0;  // 'lea' doesn't actually touch memory
-        for (uint32_t i = 0; i < n_mem_ops; i++) {
-          if (xed_decoded_inst_mem_read(ins, i)) {
-            n_used_mem_ops++;
-          }
-          if (xed_decoded_inst_mem_written(ins, i)) {
-            n_used_mem_ops++;
-          }
-        }
-        if (n_used_mem_ops > 0) {
-          if (n_used_mem_ops > 2) {
-            warn("Unexpected %u memory operands for 0x%lx\n", n_used_mem_ops, _vAddr);
-          }
-          get<MAP_MEMOPS>(xed_map_.at(_vAddr)) = n_used_mem_ops;
-        }
-      }
-    }
-    auto& xed_tuple = xed_map_[_vAddr];
-    // Record if this instruction is a conditional branch
-    bool is_cond_br = (xed_decoded_inst_get_category(ins) == XED_CATEGORY_COND_BR);
-    get<MAP_COND>(xed_tuple) = is_cond_br;
-
-    // Record if this instruction is a 'rep' type, which may indicate a
-    // variable number of memory records for input formats like memtrace
-    bool is_rep = xed_decoded_inst_get_attribute(ins, XED_ATTRIBUTE_REP) > 0;
-    get<MAP_REP>(xed_tuple) = is_rep;
-  } else {
-    if (warn_not_found_ > 0) {
-      warn_not_found_ -= 1;
-      if (warn_not_found_ > 0) {
-        warn("No information for instruction at address 0x%lx", _vAddr);
-      } else {
-        warn(
-            "No information for instruction at address 0x%lx. "
-            "Suppressing further messages",
-            _vAddr);
-      }
-    }
-    // Replace the unknown instruction with a NOP
-    // NOTE: Unknown memory records are skipped, so 'rep' needs no special
-    // handling here
-    xed_map_.emplace(_vAddr, make_tuple(0, true, false, false, makeNop(_reported_size), (uint8_t)TRACE_PATCH_NONE));
-  }
 }
 
 unique_ptr<xed_decoded_inst_t> TraceReader::makeNop(uint8_t _length) {

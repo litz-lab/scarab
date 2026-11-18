@@ -49,10 +49,12 @@ enum TracePatch : uint8_t {
   TRACE_PATCH_NOP,       // undecodable record replaced with a same-length NOP
 };
 
+struct DecodedInst;  // frontend/pt_memtrace/decode_cache.h
+
 struct InstInfo {
   uint64_t pc = 0;  // instruction address
   union {
-    const xed_decoded_inst_t* ins = nullptr;  // XED info
+    const DecodedInst* decoded = nullptr;  // PT: decode-cache entry
     const ctype_pin_inst* info;
     const ctype_pin_inst_static* static_info;  // memtrace: decode-cache entry or a reader patch
   };

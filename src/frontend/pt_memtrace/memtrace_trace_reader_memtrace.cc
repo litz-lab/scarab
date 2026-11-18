@@ -1006,7 +1006,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
     add_dependency_info(&cinst, predecoded);
     cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
     decoded =
-        decode_cache_insert(proc_id_, mt_ref_.instr.addr, cinst.st, cinst.st.num_ld + cinst.st.num_st, false, false);
+        decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, cinst.st.num_ld + cinst.st.num_st, false, false});
   } else {
     assert(decoded != nullptr);
     decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
@@ -1078,7 +1078,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
 
     xed_decoded_inst_t* xed_ins = &xed_inst;
 
-    // Count memory ops (same logic as fillCache)
+    // Count memory ops (same logic as the PT reader's decodeInst)
     int n_used_mem_ops = 0;
     uint32_t n_mem_ops = xed_decoded_inst_number_of_memory_operands(xed_ins);
     if (n_mem_ops > 0) {
@@ -1112,7 +1112,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
     fill_in_cf_info(&cinst, xed_ins);
     cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
 
-    decoded = decode_cache_insert(proc_id_, mt_ref_.instr.addr, cinst.st, n_used_mem_ops, unknown_type, is_rep);
+    decoded = decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, n_used_mem_ops, unknown_type, is_rep});
   } else {
     decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
   }

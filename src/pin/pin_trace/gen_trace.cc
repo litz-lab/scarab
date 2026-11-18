@@ -177,7 +177,7 @@ void dump_instruction() {
 
   ctype_pin_inst* info = pin_decoder_get_latest_inst();
   if(mailbox_full) {
-    mailbox.instruction_next_addr = info->instruction_addr;
+    mailbox.instruction_next_addr = info->st.instruction_addr;
     fwrite(&mailbox, sizeof(mailbox), 1, output_stream);
   }
   mailbox      = *info;

@@ -38,7 +38,7 @@
 
 // An instruction decoded once and reused on every later visit to its PC.
 struct DecodedInst {
-  ctype_pin_inst inst;
+  ctype_pin_inst_static inst;
   int num_mem_ops;    // memory records the trace delivers after the instruction record
   bool unknown_type;  // no bytes to decode: inst is a NOP of the reported size
   bool is_rep;
@@ -46,7 +46,8 @@ struct DecodedInst {
 
 // Per core: each core's trace has its own address space. Pointers stay valid until erased.
 DecodedInst* decode_cache_find(uns proc_id, uint64_t pc);
-DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const DecodedInst& decoded);
+DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const ctype_pin_inst_static& inst, int num_mem_ops,
+                                 bool unknown_type, bool is_rep);
 void decode_cache_erase(uns proc_id, uint64_t pc);
 
 #endif

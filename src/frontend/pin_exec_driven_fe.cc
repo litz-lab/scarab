@@ -84,7 +84,7 @@ inline void invalidate_op_buffer(uns proc_id) {
 }
 
 Addr get_fetch_address(uns proc_id, compressed_op* cop) {
-  return convert_to_cmp_addr(proc_id, cop->instruction_addr);
+  return convert_to_cmp_addr(proc_id, cop->st.instruction_addr);
 }
 
 /**********************************************************
@@ -135,13 +135,13 @@ void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, Op* op) {
   Flag eom = uop_generator_extract_op(proc_id, op, &cached_cop_buffers[proc_id].front());
   if (eom) {
     if (!decoupled_fe_is_off_path()) {
-      if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().scarab_marker_roi_begin == true) {
+      if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().st.scarab_marker_roi_begin == true) {
         ASSERT(proc_id, !roi_dump_began);
         // reset stats
         printf("Reached roi dump begin marker, reset stats\n");
         reset_stats(TRUE);
         roi_dump_began = TRUE;
-      } else if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().scarab_marker_roi_end == true) {
+      } else if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().st.scarab_marker_roi_end == true) {
         ASSERT(proc_id, roi_dump_began);
         // dump stats
         printf("Reached roi dump end marker, dump stats between\n");

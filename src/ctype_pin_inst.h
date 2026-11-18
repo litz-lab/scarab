@@ -94,11 +94,9 @@ typedef enum Wrongpath_Nop_Mode_Reason_enum {
   WPNM_NUM_REASONS
 } Wrongpath_Nop_Mode_Reason;
 
-typedef struct ctype_pin_inst_struct {
-  /* static information */
-
-  uint64_t inst_uid;  // unique ID produced by the frontend
-
+// Everything decoding determines about an instruction. Trace frontends cache it per PC
+// (frontend/pt_memtrace/decode_cache.h) and copy it into each instance.
+typedef struct ctype_pin_inst_static_struct {
   uint64_t instruction_addr;  // 8 bytes
   uint8_t size;               // 5 bits
   uint64_t inst_binary_msb;   // x86 instr are 1-15 bytes. Store first 8B and last 8B.
@@ -127,21 +125,12 @@ typedef struct ctype_pin_inst_struct {
 
   uint8_t num_ld;
   uint8_t num_st;
-
-  uint8_t has_immediate;  // 1 bit
-
-  /* dynamic information */
-
-  Pin_Reg_Val srcs[MAX_SRCS];
-  Pin_Reg_Val dests[MAX_DESTS];
-  uint64_t ld_vaddr[MAX_LD_NUM];
-  uint64_t st_vaddr[MAX_ST_NUM];
-  uint64_t ld_data[MAX_LD_NUM];  // loaded value (scalar <=8B, captured at IPOINT_BEFORE; 0 for wider)
   uint8_t ld_size;
   uint8_t st_size;
 
-  uint64_t branch_target;  // not the dynamic info. static info  // 8 bytes
-  uint8_t actually_taken : 1;
+  uint8_t has_immediate;  // 1 bit
+
+  uint64_t branch_target;  // static target; indirect branches overwrite it per instance
   uint8_t is_string : 1;
   uint8_t is_call : 1;
   uint8_t is_move : 1;
@@ -155,21 +144,7 @@ typedef struct ctype_pin_inst_struct {
   uint8_t is_gather_scatter : 1;
   uint8_t is_sentinel : 1;
   uint8_t fake_inst : 1;
-  uint8_t exit : 1;
   uint8_t encoding_is_new : 1;
-
-  Wrongpath_Nop_Mode_Reason fake_inst_reason;
-  uint64_t instruction_next_addr;  // the original trace does not have this information
-
-  char pin_iclass[16];
-
-  // for pin executable, these are zero initialized (calloc);
-  // for MEMTRACE, the values are set by InstInfo in fill_in_dynamic_info,
-  // whose initial values are set in processInst.
-  // used by MEMTRACE frontend to flag the last inst from the trace
-  uint8_t last_inst_from_trace : 1;
-  // used by MEMTRACE frontend to distinguish fetched/non-fetched inst
-  uint8_t fetched_instruction : 1;
   // used to flag scarab marker roi begin
   uint8_t scarab_marker_roi_begin : 1;
   // used to flag scarab marker roi begin
@@ -177,6 +152,35 @@ typedef struct ctype_pin_inst_struct {
   // set by MEMTRACE frontend on synthetic gap-patch-jmp / ctx-switch-barrier records to
   // exclude them from trace_fe.cc's pc_to_inst cache
   uint8_t is_trace_patch : 1;
+
+  Wrongpath_Nop_Mode_Reason fake_inst_reason;
+
+  char pin_iclass[16];
+} __attribute__((packed)) ctype_pin_inst_static;
+
+typedef struct ctype_pin_inst_struct {
+  ctype_pin_inst_static st;
+
+  /* dynamic information: different for each instance */
+
+  uint64_t inst_uid;  // unique ID produced by the frontend
+
+  Pin_Reg_Val srcs[MAX_SRCS];
+  Pin_Reg_Val dests[MAX_DESTS];
+  uint64_t ld_vaddr[MAX_LD_NUM];
+  uint64_t st_vaddr[MAX_ST_NUM];
+  uint64_t ld_data[MAX_LD_NUM];  // loaded value (scalar <=8B, captured at IPOINT_BEFORE; 0 for wider)
+
+  uint64_t instruction_next_addr;  // the original trace does not have this information
+  uint8_t actually_taken : 1;
+  uint8_t exit : 1;
+  // for pin executable, these are zero initialized (calloc);
+  // for MEMTRACE, the values are set by InstInfo in fill_in_dynamic_info,
+  // whose initial values are set in processInst.
+  // used by MEMTRACE frontend to flag the last inst from the trace
+  uint8_t last_inst_from_trace : 1;
+  // used by MEMTRACE frontend to distinguish fetched/non-fetched inst
+  uint8_t fetched_instruction : 1;
 } __attribute__((packed)) ctype_pin_inst;
 
 typedef ctype_pin_inst compressed_op;
@@ -190,40 +194,40 @@ static inline ctype_pin_inst create_sentinel() {
   printf("CREATE SENTINEL\n");
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
-  inst.op_type = OP_INV;
-  inst.is_sentinel = 1;
-  strcpy(inst.pin_iclass, "SENTINEL");
+  inst.st.op_type = OP_INV;
+  inst.st.is_sentinel = 1;
+  strcpy(inst.st.pin_iclass, "SENTINEL");
   return inst;
 }
 
 static inline ctype_pin_inst create_dummy_jump(uint64_t eip, uint64_t tgt, uint16_t true_op_type) {
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
-  inst.instruction_addr = eip;
-  inst.size = 5;
-  inst.op_type = OP_IADD;
-  inst.cf_type = CF_BR;
-  inst.num_simd_lanes = 1;
-  inst.lane_width_bytes = 8;
-  inst.branch_target = tgt;
+  inst.st.instruction_addr = eip;
+  inst.st.size = 5;
+  inst.st.op_type = OP_IADD;
+  inst.st.cf_type = CF_BR;
+  inst.st.num_simd_lanes = 1;
+  inst.st.lane_width_bytes = 8;
+  inst.st.branch_target = tgt;
   inst.actually_taken = 1;
-  inst.true_op_type = true_op_type;
-  inst.fake_inst = 1;
-  inst.fake_inst_reason = WPNM_FAKE_JMP;
-  strcpy(inst.pin_iclass, "JMP");
+  inst.st.true_op_type = true_op_type;
+  inst.st.fake_inst = 1;
+  inst.st.fake_inst_reason = WPNM_FAKE_JMP;
+  strcpy(inst.st.pin_iclass, "JMP");
   return inst;
 }
 
 static inline ctype_pin_inst create_dummy_nop(uint64_t eip, Wrongpath_Nop_Mode_Reason reason, uint8_t size) {
   ctype_pin_inst inst;
   init_ctype_pin_inst(&inst);
-  inst.instruction_addr = eip;
+  inst.st.instruction_addr = eip;
   inst.instruction_next_addr = eip + size;
-  inst.size = size;
-  inst.op_type = OP_NOP;
-  strcpy(inst.pin_iclass, "DUMMY_NOP");
-  inst.fake_inst = 1;
-  inst.fake_inst_reason = reason;
+  inst.st.size = size;
+  inst.st.op_type = OP_NOP;
+  strcpy(inst.st.pin_iclass, "DUMMY_NOP");
+  inst.st.fake_inst = 1;
+  inst.st.fake_inst_reason = reason;
   return inst;
 }
 

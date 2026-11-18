@@ -64,8 +64,7 @@ int main(int argc, char* argv[]) {
   int                   inst_count = 0;
 
   while(fread(&pin_inst, sizeof(ctype_pin_inst), 1, orig_stream)) {
-    tuple3 occurance_key = std::make_tuple(pin_inst.op_type, pin_inst.num_ld,
-                                           pin_inst.num_st);
+    tuple3 occurance_key = std::make_tuple(pin_inst.st.op_type, pin_inst.st.num_ld, pin_inst.st.num_st);
 
     // if (occurance_map.count(occurance_key) == 1) continue;
 
@@ -75,32 +74,26 @@ int main(int argc, char* argv[]) {
          << endl;
     inst_count++;
 
-    cout << "EIP: " << hex << pin_inst.instruction_addr << "\n";
+    cout << "EIP: " << hex << pin_inst.st.instruction_addr << "\n";
     cout << "Next EIP: " << hex << pin_inst.instruction_next_addr << "\n";
-    cout << "OpType: " << (int)pin_inst.op_type << "\n";
-    cout << "ICLASS: " << pin_inst.pin_iclass << "\n";
-    cout << "Number of Loads: " << dec << (uint32_t)pin_inst.num_ld << "\n";
-    cout << "Number of Store: " << (uint32_t)pin_inst.num_st << "\n";
-    cout << "Load Size: " << (uint32_t)pin_inst.ld_size << "\n";
-    cout << "Store Size: " << (uint32_t)pin_inst.st_size << "\n";
-    cout << "Number of SIMD Lanes: " << dec << (int)pin_inst.num_simd_lanes
-         << "\n";
-    cout << "Lane Width: " << (int)pin_inst.lane_width_bytes << "\n";
-    cout << "Is Repeat Instruction: "
-         << (((int)pin_inst.is_repeat == 1) ? "Yes" : "No") << "\n";
-    cout << "Control Flow Instruction: "
-         << (((int)pin_inst.cf_type != 0) ? "Yes" : "No") << "\n";
-    cout << "Branch Target: 0x" << hex << pin_inst.branch_target << "\n";
+    cout << "OpType: " << (int)pin_inst.st.op_type << "\n";
+    cout << "ICLASS: " << pin_inst.st.pin_iclass << "\n";
+    cout << "Number of Loads: " << dec << (uint32_t)pin_inst.st.num_ld << "\n";
+    cout << "Number of Store: " << (uint32_t)pin_inst.st.num_st << "\n";
+    cout << "Load Size: " << (uint32_t)pin_inst.st.ld_size << "\n";
+    cout << "Store Size: " << (uint32_t)pin_inst.st.st_size << "\n";
+    cout << "Number of SIMD Lanes: " << dec << (int)pin_inst.st.num_simd_lanes << "\n";
+    cout << "Lane Width: " << (int)pin_inst.st.lane_width_bytes << "\n";
+    cout << "Is Repeat Instruction: " << (((int)pin_inst.st.is_repeat == 1) ? "Yes" : "No") << "\n";
+    cout << "Control Flow Instruction: " << (((int)pin_inst.st.cf_type != 0) ? "Yes" : "No") << "\n";
+    cout << "Branch Target: 0x" << hex << pin_inst.st.branch_target << "\n";
     cout << "Actually Taken: 0x" << dec << (int)pin_inst.actually_taken << "\n";
 
-    print_regs("Source Regs", pin_inst.num_src_regs, pin_inst.src_regs);
-    print_regs("Destination Regs", pin_inst.num_dst_regs, pin_inst.dst_regs);
-    print_regs("First Load Address Regs", pin_inst.num_ld1_addr_regs,
-               pin_inst.ld1_addr_regs);
-    print_regs("Second Load Address Regs", pin_inst.num_ld2_addr_regs,
-               pin_inst.ld2_addr_regs);
-    print_regs("Store Address Regs", pin_inst.num_st_addr_regs,
-               pin_inst.st_addr_regs);
+    print_regs("Source Regs", pin_inst.st.num_src_regs, pin_inst.st.src_regs);
+    print_regs("Destination Regs", pin_inst.st.num_dst_regs, pin_inst.st.dst_regs);
+    print_regs("First Load Address Regs", pin_inst.st.num_ld1_addr_regs, pin_inst.st.ld1_addr_regs);
+    print_regs("Second Load Address Regs", pin_inst.st.num_ld2_addr_regs, pin_inst.st.ld2_addr_regs);
+    print_regs("Store Address Regs", pin_inst.st.num_st_addr_regs, pin_inst.st.st_addr_regs);
 
     cout << "*** end of the data structure *** " << endl << endl;
   }

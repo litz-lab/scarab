@@ -81,13 +81,13 @@ const uint64_t offset = 0xFF0000;        // ensure to generate no zero page addr
 /* Private Functions for PT */
 
 void pt_fill_in_dynamic_info(ctype_pin_inst* info, const InstInfo* insi) {
-  info->instruction_addr = insi->pc;
+  info->st.instruction_addr = insi->pc;
   info->instruction_next_addr = insi->target;
   info->actually_taken = insi->taken;
-  info->branch_target = insi->target;
+  info->st.branch_target = insi->target;
   info->inst_uid = pt_ins_id;
 
-  if (info->fake_inst)
+  if (info->st.fake_inst)
     return;
 
 #ifdef PRINT_INSTRUCTION_INFO
@@ -172,7 +172,7 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
   if (insi->static_target) {
     // XED encoded target may not be right, so set it directly
     // std::cout << "setting branch target to: " << insi->static_target << " for PC: " << insi->pc << std::endl;
-    pt_next_pi->branch_target = insi->static_target;
+    pt_next_pi->st.branch_target = insi->static_target;
   }
   /* std::cout << "branch target for PC: " << pt_next_pi->instruction_addr << " is: " << pt_next_pi->branch_target <<
    * std::endl; */

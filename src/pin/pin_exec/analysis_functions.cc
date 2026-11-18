@@ -243,7 +243,7 @@ void add_right_path_exec_br(CONTEXT* ctxt) {
 void after_ins_restage_op(ADDRINT iaddr) {
   if (fast_forward_count)
     return;
-  if (op_mailbox_full && op_mailbox.instruction_addr == iaddr)
+  if (op_mailbox_full && op_mailbox.st.instruction_addr == iaddr)
     op_mailbox = *pin_decoder_get_latest_inst();
 }
 

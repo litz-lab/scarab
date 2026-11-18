@@ -147,6 +147,11 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
       return 0;  // end of trace
   } while (insi->pid != pt_prior_pid || insi->tid != pt_prior_tid);
 
+  if (insi->trace_patch == TRACE_PATCH_REPAIRED)
+    STAT_EVENT(proc_id, PT_INST_REPAIRED);
+  else if (insi->trace_patch == TRACE_PATCH_NOP)
+    STAT_EVENT(proc_id, PT_INST_NOP);
+
   if (insi->fake_inst) {
     *pt_next_pi = *insi->info;
     pt_fill_in_dynamic_info(pt_next_pi, insi);

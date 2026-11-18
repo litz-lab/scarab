@@ -11,6 +11,7 @@
 
 #include "bp/bp.h"
 #include "frontend/frontend_intf.h"
+#include "frontend/pt_memtrace/decode_cache.h"
 #include "frontend/pt_memtrace/memtrace_fe.h"
 #include "frontend/pt_memtrace/pt_fe.h"
 #include "isa/isa.h"
@@ -41,7 +42,6 @@ static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
-static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
 
 /* Per-core circular buffer state */
 struct TraceBufState {
@@ -54,10 +54,9 @@ static TraceBufState trace_buf_state[MAX_NUM_PROCS];
 
 const int CLINE = ~0x3F;
 
-/* Stamped into replay-buffer oracle memory addresses when
-   POISON_REPLAY_BUFFER_ORACLE_VA is set. Deliberately non-canonical so any
-   consumer of a replayed address fails loudly rather than silently inheriting
-   on-path oracle state. */
+/* Stamped into every memory address of a replayed (off-path) instruction.
+   Deliberately non-canonical so any consumer of a replayed address fails loudly
+   rather than silently inheriting on-path oracle state. */
 static const uint64_t REPLAY_BUFFER_POISON_VA = 0xCAFEBABEDEADBEAFULL;
 
 extern uint64_t ins_id[MAX_NUM_PROCS];
@@ -93,112 +92,43 @@ void buf_map_remove(uns proc_id) {
   state.rdptr = (state.rdptr + 1) % TRACE_BUF_SIZE;
 }
 
+// Rebuild the last on-path instance of a PC from its decode-cache entry: the decoded
+// instruction, or the PT fake that replaced it, plus the recorded per-instance fields.
+static void replay_instance(ctype_pin_inst* inst, uint64_t pc, const DecodedInst* d) {
+  if (d->replay.fake == WPNM_FAKE_NOP) {
+    *inst = create_dummy_nop(pc, WPNM_FAKE_NOP, d->inst.size);
+  } else if (d->replay.fake == WPNM_FAKE_JMP) {
+    *inst = create_dummy_jump(pc, d->replay.branch_target, XED_ICLASS_JMP);
+  } else {
+    init_ctype_pin_inst(inst);
+    inst->st = d->inst;
+    inst->st.encoding_is_new = d->replay.encoding_is_new;
+    inst->st.num_ld = d->replay.num_ld;
+    inst->st.num_st = d->replay.num_st;
+  }
+  inst->st.instruction_addr = pc;
+  inst->st.branch_target = d->replay.branch_target;
+  inst->instruction_next_addr = d->replay.next_addr;
+  inst->inst_uid = d->replay.inst_uid;
+  inst->actually_taken = d->replay.taken;
+  inst->exit = d->replay.exit;
+  inst->last_inst_from_trace = d->replay.last_inst_from_trace;
+  inst->fetched_instruction = d->replay.fetched;
+  for (uns i = 0; i < MAX_LD_NUM; i++)
+    inst->ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+  for (uns i = 0; i < MAX_ST_NUM; i++)
+    inst->st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+}
+
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
-  auto op_iter = pc_to_inst[proc_id].find(*off_path_addr);
-  if (op_iter != pc_to_inst[proc_id].end()) {
-    *inst = op_iter->second;
+  const DecodedInst* d = decode_cache_find(proc_id, *off_path_addr);
+  if (d && d->replay.valid) {
+    replay_instance(inst, *off_path_addr, d);
     (*off_path_addr) += inst->st.size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->st.instruction_addr, inst->st.size);
   } else {
     *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
     (*off_path_addr) += DUMMY_NOP_SIZE;
-  }
-}
-
-Flag ctype_pin_inst_same_mem_vaddr(ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
-  for (uns i = 0; i < MAX_LD_NUM; i++) {
-    if (inst_a.ld_vaddr[i] != inst_b.ld_vaddr[i]) {
-      return FALSE;
-    }
-  }
-
-  for (uns i = 0; i < MAX_ST_NUM; i++) {
-    if (inst_a.st_vaddr[i] != inst_b.st_vaddr[i]) {
-      return FALSE;
-    }
-  }
-
-  return TRUE;
-}
-
-void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
-  // uint64_t inst_uid;  // unique ID produced by the frontend
-
-  ASSERT(proc_id, inst_a.st.instruction_addr == inst_b.st.instruction_addr);
-  ASSERT(proc_id, inst_a.st.size == inst_b.st.size);
-  ASSERT(proc_id, inst_a.st.inst_binary_msb == inst_b.st.inst_binary_msb);
-  ASSERT(proc_id, inst_a.st.inst_binary_lsb == inst_b.st.inst_binary_lsb);
-  ASSERT(proc_id, inst_a.st.op_type == inst_b.st.op_type);
-  ASSERT(proc_id, inst_a.st.cf_type == inst_b.st.cf_type);
-  ASSERT(proc_id, inst_a.st.is_fp == inst_b.st.is_fp);
-  ASSERT(proc_id, inst_a.st.true_op_type == inst_b.st.true_op_type);
-  ASSERT(proc_id, inst_a.st.num_src_regs == inst_b.st.num_src_regs);
-  ASSERT(proc_id, inst_a.st.num_dst_regs == inst_b.st.num_dst_regs);
-  ASSERT(proc_id, inst_a.st.num_ld1_addr_regs == inst_b.st.num_ld1_addr_regs);
-  ASSERT(proc_id, inst_a.st.num_ld2_addr_regs == inst_b.st.num_ld2_addr_regs);
-  ASSERT(proc_id, inst_a.st.num_st_addr_regs == inst_b.st.num_st_addr_regs);
-
-  for (uns i = 0; i < MAX_SRC_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.st.src_regs[i] == inst_b.st.src_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_DST_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.st.dst_regs[i] == inst_b.st.dst_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.st.ld1_addr_regs[i] == inst_b.st.ld1_addr_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.st.ld2_addr_regs[i] == inst_b.st.ld2_addr_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.st.st_addr_regs[i] == inst_b.st.st_addr_regs[i]);
-  }
-
-  ASSERT(proc_id, inst_a.st.num_simd_lanes == inst_b.st.num_simd_lanes);
-  ASSERT(proc_id, inst_a.st.lane_width_bytes == inst_b.st.lane_width_bytes);
-  ASSERT(proc_id, inst_a.st.num_ld == inst_b.st.num_ld);
-  ASSERT(proc_id, inst_a.st.num_st == inst_b.st.num_st);
-  ASSERT(proc_id, inst_a.st.has_immediate == inst_b.st.has_immediate);
-
-  for (uns i = 0; i < MAX_LD_NUM; i++) {
-    ASSERT(proc_id, inst_a.ld_vaddr[i] == inst_b.ld_vaddr[i]);
-  }
-
-  for (uns i = 0; i < MAX_ST_NUM; i++) {
-    ASSERT(proc_id, inst_a.st_vaddr[i] == inst_b.st_vaddr[i]);
-  }
-
-  ASSERT(proc_id, inst_a.st.ld_size == inst_b.st.ld_size);
-  ASSERT(proc_id, inst_a.st.st_size == inst_b.st.st_size);
-  ASSERT(proc_id, inst_a.st.branch_target == inst_b.st.branch_target);
-  ASSERT(proc_id, inst_a.actually_taken == inst_b.actually_taken);
-
-  ASSERT(proc_id, inst_a.st.is_string == inst_b.st.is_string);
-  ASSERT(proc_id, inst_a.st.is_call == inst_b.st.is_call);
-  ASSERT(proc_id, inst_a.st.is_move == inst_b.st.is_move);
-  ASSERT(proc_id, inst_a.st.is_prefetch == inst_b.st.is_prefetch);
-
-  ASSERT(proc_id, inst_a.st.has_push == inst_b.st.has_push);
-  ASSERT(proc_id, inst_a.st.has_pop == inst_b.st.has_pop);
-  ASSERT(proc_id, inst_a.st.is_ifetch_barrier == inst_b.st.is_ifetch_barrier);
-  ASSERT(proc_id, inst_a.st.is_lock == inst_b.st.is_lock);
-
-  ASSERT(proc_id, inst_a.st.is_repeat == inst_b.st.is_repeat);
-  ASSERT(proc_id, inst_a.st.is_simd == inst_b.st.is_simd);
-  ASSERT(proc_id, inst_a.st.is_gather_scatter == inst_b.st.is_gather_scatter);
-  ASSERT(proc_id, inst_a.st.is_sentinel == inst_b.st.is_sentinel);
-
-  ASSERT(proc_id, inst_a.st.fake_inst == inst_b.st.fake_inst);
-  ASSERT(proc_id, inst_a.exit == inst_b.exit);
-  ASSERT(proc_id, inst_a.st.fake_inst_reason == inst_b.st.fake_inst_reason);
-  ASSERT(proc_id, inst_a.instruction_next_addr == inst_b.instruction_next_addr);
-
-  for (uns i = 0; i < 16; i++) {
-    ASSERT(proc_id, inst_a.st.pin_iclass[i] == inst_b.st.pin_iclass[i]);
   }
 }
 
@@ -271,50 +201,43 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
       } else if (!next_onpath_pi[proc_id].st.is_trace_patch) {
-        uint64_t addr = next_onpath_pi[proc_id].st.instruction_addr;
-        auto it = pc_to_inst[proc_id].find(addr);
-        if (it == pc_to_inst[proc_id].end()) {
-          pc_to_inst[proc_id].emplace(addr, next_onpath_pi[proc_id]);
-        } else if (next_onpath_pi[proc_id].st.encoding_is_new) {
+        const ctype_pin_inst& pi = next_onpath_pi[proc_id];
+        uint64_t addr = pi.st.instruction_addr;
+        DecodedInst* d = decode_cache_find(proc_id, addr);
+        ASSERT(proc_id, d);
+        // A PT fake carries no instruction bytes; the decoded instruction does.
+        uint64_t last_lsb = d->replay.fake ? 0 : d->inst.inst_binary_lsb;
+        uint64_t last_msb = d->replay.fake ? 0 : d->inst.inst_binary_msb;
+        if (!d->replay.valid) {
+        } else if (pi.st.encoding_is_new) {
           STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
-          it->second = next_onpath_pi[proc_id];
-        } else if (next_onpath_pi[proc_id].st.inst_binary_lsb != it->second.st.inst_binary_lsb ||
-                   next_onpath_pi[proc_id].st.inst_binary_msb != it->second.st.inst_binary_msb) {
+        } else if (pi.st.inst_binary_lsb != last_lsb || pi.st.inst_binary_msb != last_msb) {
           DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
-                next_onpath_pi[proc_id].st.size, next_onpath_pi[proc_id].st.inst_binary_lsb,
-                next_onpath_pi[proc_id].st.inst_binary_msb);
+                pi.st.size, pi.st.inst_binary_lsb, pi.st.inst_binary_msb);
           // Handle jitted code
           STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-          it->second = next_onpath_pi[proc_id];
-        } else if (next_onpath_pi[proc_id].instruction_next_addr != it->second.instruction_next_addr) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].st.op_type == it->second.st.op_type);
-          if (next_onpath_pi[proc_id].st.cf_type) {
-            ASSERT(proc_id, next_onpath_pi[proc_id].st.cf_type == it->second.st.cf_type);
-            // This can fail for java pt traces
-            // ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
-            //                 next_onpath_pi[proc_id].cf_type >= CF_IBR ||
-            //                 next_onpath_pi[proc_id].last_inst_from_trace);
-          }
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].st.op_type);
-          it->second = next_onpath_pi[proc_id];
-        } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], it->second)) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].st.op_type == it->second.st.op_type);
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].st.op_type);
-          it->second = next_onpath_pi[proc_id];
+        } else if (pi.instruction_next_addr != d->replay.next_addr) {
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + pi.st.op_type);
         } else {
-          if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
-            assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], it->second);
-          }
+          // replayed addresses are poisoned, so an instance never matches them
+          STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + pi.st.op_type);
         }
-        // Poison the oracle memory addresses of the replay-buffer entry for this
-        // PC; they are only ever read back to replay off-path instructions.
-        if (POISON_REPLAY_BUFFER_ORACLE_VA) {
-          ctype_pin_inst &replay_entry = pc_to_inst[proc_id][addr];
-          for (uns i = 0; i < MAX_LD_NUM; i++)
-            replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
-          for (uns i = 0; i < MAX_ST_NUM; i++)
-            replay_entry.st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+        if (pi.st.fake_inst) {
+          ASSERT(proc_id, pi.st.fake_inst_reason == WPNM_FAKE_NOP || pi.st.fake_inst_reason == WPNM_FAKE_JMP);
+          ASSERT(proc_id, pi.st.size == (pi.st.fake_inst_reason == WPNM_FAKE_NOP ? d->inst.size : 5));
         }
+        d->replay.valid = true;
+        d->replay.fake = pi.st.fake_inst ? pi.st.fake_inst_reason : 0;
+        d->replay.taken = pi.actually_taken;
+        d->replay.exit = pi.exit;
+        d->replay.last_inst_from_trace = pi.last_inst_from_trace;
+        d->replay.fetched = pi.fetched_instruction;
+        d->replay.encoding_is_new = pi.st.encoding_is_new;
+        d->replay.num_ld = pi.st.num_ld;
+        d->replay.num_st = pi.st.num_st;
+        d->replay.next_addr = pi.instruction_next_addr;
+        d->replay.branch_target = pi.st.branch_target;
+        d->replay.inst_uid = pi.inst_uid;
       }
     } else {
       off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);

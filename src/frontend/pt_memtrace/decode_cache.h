@@ -36,6 +36,23 @@
 
 #include "ctype_pin_inst.h"
 
+// Wrong-path replay (trace_fe.cc): the last on-path instance of a PC, recorded at fetch.
+// Memory addresses are always replayed poisoned; register values and load data as zero.
+struct ReplayRecord {
+  bool valid;    // an instance of this PC was fetched on path
+  uint8_t fake;  // Wrongpath_Nop_Mode_Reason of the PT fake that replaced it, 0 if none
+  bool taken;
+  bool exit;
+  bool last_inst_from_trace;
+  bool fetched;
+  bool encoding_is_new;
+  uint8_t num_ld;  // memtrace_fe zeroes these for an instance without memory records
+  uint8_t num_st;
+  uint64_t next_addr;
+  uint64_t branch_target;  // per instance for indirect branches
+  uint64_t inst_uid;
+};
+
 // An instruction decoded once and reused on every later visit to its PC.
 struct DecodedInst {
   ctype_pin_inst_static inst;
@@ -57,6 +74,8 @@ struct DecodedInst {
   uint8_t num_mem_operands;  // all XED memory operands, used or not
   uint8_t mem_read_mask;     // bit i: memory operand i is read
   uint8_t mem_written_mask;  // bit i: memory operand i is written
+
+  ReplayRecord replay;
 };
 
 // Per core: each core's trace has its own address space. Pointers stay valid until erased.

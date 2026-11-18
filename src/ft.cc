@@ -625,6 +625,31 @@ void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr) {
   ASSERT(proc_id, op->eom);
 }
 
+FT* ft_warmup_alloc(uns proc_id) {
+  return alloc_ft(proc_id, MAIN_BP);
+}
+
+void ft_warmup_add_op(FT* ft, Op* op) {
+  op->off_path = FALSE;
+  op->conf_off_path = FALSE;
+  // On path, the prediction an FT ends on is the outcome (as FT::build sets it for a prebuilt FT).
+  op->bp_pred_main.pred_npc = op->oracle_info.npc;
+  op->bp_pred_main.pred = op->oracle_info.dir;
+  ft->add_op(op);
+}
+
+bool ft_warmup_ended(FT* ft) {
+  return ft->get_end_reason() != FT_NOT_ENDED;
+}
+
+void ft_warmup_finish(FT* ft) {
+  ft->generate_ft_info();
+}
+
+void ft_warmup_free(FT* ft) {
+  free_ft(ft);
+}
+
 /* retire and flush, free all ops in a FT when last op is freed */
 void ft_free_op(Op* op) {
   ASSERT(0, op->parent_FT);

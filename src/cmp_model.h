@@ -88,6 +88,7 @@ void cmp_done(void);
 void cmp_wake(Op*, Op*, uns);
 void cmp_retire_hook(Op*);
 void cmp_warmup(Op*);
+void cmp_warmup_done(void);
 
 /**************************************************************************************/
 

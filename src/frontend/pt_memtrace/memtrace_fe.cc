@@ -209,7 +209,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   } while (follow_single_thread && (insi->pid != prior_pid[proc_id] || insi->tid != prior_tid[proc_id]));
 
   // Static info (basic_info, deps, simd, cf, etc.) is pre-built in
-  // processInst / processDrIsaInst and cached via the reader's ctype_inst_map_.
+  // processInst / processDrIsaInst and cached in the decode cache (decode_cache.h).
   assert(insi->info != nullptr);
   memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));
   fill_in_dynamic_info(proc_id, next_onpath_pi, insi);
@@ -294,7 +294,7 @@ void memtrace_setup(uns proc_id) {
   std::string path(trace_files[proc_id]);
   std::string trace(path);
 
-  trace_readers[proc_id] = new TraceReaderMemtrace(trace, 1);
+  trace_readers[proc_id] = new TraceReaderMemtrace(trace, 1, proc_id);
 
   if (FAST_FORWARD) {
     ASSERT(proc_id, !MEMTRACE_ROI_BEGIN && !MEMTRACE_ROI_END);

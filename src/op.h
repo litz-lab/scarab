@@ -36,7 +36,6 @@
 
 #include "dyn_inst.h"
 #include "ft_info.h"
-#include "inst_info.h"
 #include "op_info.h"
 #include "pred_info.h"
 #include "static_inst_info.h"

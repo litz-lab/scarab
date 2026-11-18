@@ -37,14 +37,12 @@ source file. Be really careful about putting stuff in here.  You don't want to
 /* Forward declarations of typedefs. They are in this file to avoid
    typedef re-definition. Typedef re-definition is actually OK in gcc 4.4+,
    but since the base HPS gcc is only 4.1.2, we are using this solution. */
-typedef struct Inst_Info_struct Inst_Info;
 typedef struct Mem_Req_struct Mem_Req;
 typedef struct Op_Info_struct Op_Info;
 typedef struct Op_struct Op;
 typedef struct Ports_struct Ports;
 typedef struct Pref_Mem_Req_struct Pref_Mem_Req;
 typedef struct Stream_Buffer_struct Stream_Buffer;
-typedef struct Table_Info_struct Table_Info;
 typedef struct HWP_struct HWP;
 typedef struct HWP_Info_struct HWP_Info;
 typedef struct FT_Info_struct FT_Info;

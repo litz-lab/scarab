@@ -689,10 +689,13 @@ static void warmup_sim(void) {
         model->warmup_func(op);
         if (op->eom) {
           frontend_retire(proc_id, op->inst_uid);
-          // HACK that ensures that cache replacement works in warmup: one time step per instruction
+          // HACK that ensures that cache replacement works in warmup: one time step per instruction.
+          // The caches stamp each access with sim_time, so it must move with the clock; frozen,
+          // every line has the same time and true LRU evicts way 0 every time.
           do {
             freq_advance_time();
           } while (!freq_is_ready(FREQ_DOMAIN_L1));
+          sim_time = freq_time();
         }
       }
       ft_warmup_free(ft);
@@ -701,7 +704,6 @@ static void warmup_sim(void) {
         warmup_done = TRUE;
     }
   }
-  sim_time = freq_time();
   if (model->warmup_done_func)
     model->warmup_done_func();
 

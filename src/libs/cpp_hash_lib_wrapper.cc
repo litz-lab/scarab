@@ -12,8 +12,7 @@ extern "C" {
 // address but carry their own fabricated (always-zeroed) binary encoding, so {addr,
 // lsb_bytes, msb_bytes, op_idx, mem_shape} alone isn't enough to tell them apart from
 // whatever real instruction happens to hash to the same key. cf_type is included in every
-// one of these tables (dynamic Inst_Info as well as the static per-macro/per-uop tables)
-// so a patch can never alias a real decode, or vice versa.
+// one of these tables so a patch can never alias a real decode, or vice versa.
 struct inst_key {
   uint64_t addr;
   uint64_t lsb_bytes;
@@ -57,24 +56,6 @@ struct inst_hash_fn {
     return static_cast<std::size_t>(h ^ (h >> 32));
   }
 };
-
-// Per-core hash maps for instruction info
-std::unordered_map<inst_key, Inst_Info, inst_hash_fn> per_core_hash_map[MAX_NUM_PROCS];
-
-Inst_Info* cpp_hash_table_access_create(int core, uint64_t addr, uint64_t lsb_bytes, uint64_t msb_bytes, uint8_t op_idx,
-                                        uint16_t mem_shape, uint8_t cf_type, unsigned char* new_entry) {
-  *new_entry = false;
-  inst_key _key(addr, lsb_bytes, msb_bytes, op_idx, mem_shape, cf_type);
-  auto& hash_map = per_core_hash_map[core];
-  auto lookup = hash_map.find(_key);
-  if (lookup != hash_map.end()) {
-    return &lookup->second;
-  } else {
-    auto inserted = hash_map.emplace(_key, Inst_Info{});
-    *new_entry = inserted.second;
-    return &inserted.first->second;
-  }
-}
 
 // Per-macro-instruction static info: keyed by {addr, binary, mem_shape, cf_type} (op_idx fixed
 // at 0), so all uops of the same macro instance share one entry.

@@ -110,7 +110,7 @@ typedef struct Icache_Stage_struct {
   uns64 fetch_barrier_inst_uid;
   Counter fetch_barrier_op_num;
 
-  Inst_Info** line; /* pointer to current line on a hit */
+  void* line;       /* pointer to current line on a hit */
   Addr line_addr;   /* address of the last cache line hit */
   Addr fetch_addr;  /* address to fetch or fetching */
   void* ft_op_buffer; /* opaque std::vector-backed FT op buffer */
@@ -119,11 +119,11 @@ typedef struct Icache_Stage_struct {
 
   Counter rdy_cycle; /* cycle that the henry icache will return data (only used in henry model) */
 
-  Cache icache;           /* the cache storage structure (caches Inst_Info *) */
+  Cache icache;           /* the cache storage structure (hit/miss only; no data) */
   Ports* ports;           /* read ports per bank; banks interleave cache lines */
   List pref_queue;        /* instruction prefetches, in pref_common's queue */
   Cache icache_line_info; /* contains info about the icache lines */
-  Cache pref_icache;      /* Prefetcher cache storage structure (caches Inst_Info *) */
+  Cache pref_icache;      /* Prefetcher cache storage structure (hit/miss only; no data) */
   char rand_wb_state[31]; /* State of random number generator for random writeback */
 } Icache_Stage;
 

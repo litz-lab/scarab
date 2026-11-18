@@ -63,6 +63,7 @@
 #include "cmp_model_support.h"
 #include "dumb_model.h"
 #include "freq.h"
+#include "ft.h"
 #include "lookahead_buffer.h"
 #include "model.h"
 #include "op_pool.h"
@@ -642,6 +643,80 @@ void uop_sim() {
 }
 
 /**************************************************************************************/
+/* warmup_sim: functional warmup (--warmup). Each core in turn fetches one on-path FT
+   from the frontend and hands its ops, in order, to the model's warmup function; the
+   ops then retire and are freed with the FT. The ops come from the op pool and have a
+   parent FT, as in simulation: the branch predictors and BTB read it. Warmup stops
+   once core 0 has fetched WARMUP instructions, cutting the FT in progress there so no
+   instruction past the boundary is consumed. */
+
+static void warmup_sim(void) {
+  ASSERTM(0, model->warmup_func, "Model %s does not have a warmup function\n", model->name);
+  ASSERTM(0, NUM_CORES == 1 || !FAST_FORWARD_UNTIL_ADDR, "FAST_FORWARD_UNTIL_ADDR works only for single core\n");
+  ASSERTM(0, !PIPEVIEW, "PIPEVIEW is not supported with WARMUP\n");  // free_op would print the warmup ops
+
+  Flag warmup_done = FALSE;
+  while (!warmup_done) {
+    for (uns proc_id = 0; proc_id < NUM_CORES; proc_id++) {
+      if (DUMB_CORE_ON && DUMB_CORE == proc_id)
+        continue;
+      if (retired_exit[proc_id])
+        continue;
+
+      FT* ft = ft_warmup_alloc(proc_id);
+      Flag cut = FALSE;
+      do {
+        Op* op = alloc_op(proc_id);
+        frontend_fetch_op(proc_id, 0, op);
+        if (op->uop->mem_type != NOT_MEM && op->oracle_info.va == 0)
+          FATAL_ERROR(proc_id, "Access to 0x0\n");
+        if (DUMP_TRACE && DEBUG_RANGE_COND(proc_id))
+          print_func_op(op);
+        ft_warmup_add_op(ft, op);
+
+        op_count[proc_id]++;
+        if (op->eom)
+          inst_count[proc_id]++;
+        if (op->exit)
+          retired_exit[proc_id] = TRUE;
+        ASSERTM(proc_id, !op->exit, "Program ended before start of simulation\n");
+        cut = proc_id == 0 && op->eom && inst_count[0] == WARMUP;
+      } while (!cut && !ft_warmup_ended(ft));
+      ft_warmup_finish(ft);
+
+      while (ft_can_fetch_op(ft)) {
+        Op* op = ft_fetch_op(ft);
+        model->warmup_func(op);
+        if (op->eom) {
+          frontend_retire(proc_id, op->inst_uid);
+          // HACK that ensures that cache replacement works in warmup: one time step per instruction
+          do {
+            freq_advance_time();
+          } while (!freq_is_ready(FREQ_DOMAIN_L1));
+        }
+      }
+      ft_warmup_free(ft);
+
+      if (cut)
+        warmup_done = TRUE;
+    }
+  }
+  sim_time = freq_time();
+  if (model->warmup_done_func)
+    model->warmup_done_func();
+
+  // Reset counts and flags for ALL cores when transitioning to simulation
+  for (uns i = 0; i < NUM_CORES; i++) {
+    if (DUMB_CORE_ON && DUMB_CORE == i)
+      continue;
+    inst_count[i] = 0;
+    op_count[i] = 0;
+    retired_exit[i] = FALSE;
+    check_heartbeat(i, TRUE);
+  }
+}
+
+/**************************************************************************************/
 /* full_sim: This is the main loop for running in full simulation mode.*/
 
 void full_sim() {
@@ -653,8 +728,9 @@ void full_sim() {
   init_model(WARMUP_MODE);  // make sure this happens before init_op_pool
 
   if (WARMUP) {
+    init_op_pool();  // warmup builds its FTs from pool ops
     operating_mode = WARMUP_MODE;
-    uop_sim();
+    warmup_sim();
     reset_uop_mode_counters();
     reset_stats(FALSE);  // ignore stats accumulated during warmup
     /* The call below resets the cycle counts of all frequency
@@ -691,7 +767,8 @@ void full_sim() {
   if (MEMVIEW)
     memview_init();
 
-  init_op_pool();
+  if (!WARMUP)
+    init_op_pool();  // a warmup run initialized it before warmup
 
   // need to fill lookahead buffer after init_op_pool
   if (LOOKAHEAD_BUF_SIZE) {

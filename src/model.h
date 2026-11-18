@@ -66,6 +66,7 @@ typedef struct Model_struct {
   void (*op_fetched_hook)(Op*);
   void (*op_retired_hook)(Op*);  // called just before the op is freed
   void (*warmup_func)(Op* op);   // called for warmup(may be NULL)
+  void (*warmup_done_func)(void);  // called once when warmup ends (may be NULL)
 
   /*      void (*l0_cache_miss_hook)      (Op *); */
   /*      void (*resolve_mispredict_hook) (Op *); */

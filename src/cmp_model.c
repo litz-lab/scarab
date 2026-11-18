@@ -48,6 +48,7 @@
 #include "dvfs/dvfs.h"
 #include "dvfs/perf_pred.h"
 #include "memory/cache_part.h"
+#include "memory/mem_warmup.h"
 #include "prefetcher/D_JOLT.h"
 #include "prefetcher/FNL+MMA.h"
 #include "prefetcher/eip.h"
@@ -82,7 +83,6 @@ static void cmp_redirect(void);
 static void cmp_measure_chip_util(void);
 static void cmp_istreams(void);
 static void cmp_cores(void);
-static void warmup_uncore(uns proc_id, Addr addr, Flag write);
 
 /**************************************************************************************/
 /* cmp_init */
@@ -435,37 +435,9 @@ void cmp_retire_hook(Op* op) {
   ft_free_op(op);
 }
 
-void warmup_uncore(uns proc_id, Addr addr, Flag write) {
-  Addr dummy_line_addr;
-  ASSERTM(0, !MLC_PRESENT, "Warmup for MLC not implemented\n");
-
-  Cache* l1_cache = &(cmp_model.memory.uncores[proc_id].l1->cache);
-  L1_Data* l1_data = cache_access(l1_cache, addr, &dummy_line_addr, TRUE);
-  if (l1_data) {  // hit
-    if (write)
-      l1_data->dirty = TRUE;
-  } else {  // miss
-    Addr repl_line_addr;
-    Flag repl_line_valid;
-    get_next_repl_line(l1_cache, proc_id, addr, &repl_line_addr, &repl_line_valid);
-    STAT_EVENT(proc_id, NORESET_L1_FILL);
-    STAT_EVENT(proc_id, NORESET_L1_FILL_NONPREF);
-    if (repl_line_valid) {
-      uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
-      STAT_EVENT(repl_proc_id, NORESET_L1_EVICT);
-      STAT_EVENT(repl_proc_id, NORESET_L1_EVICT_NONPREF);
-    }
-    l1_data = (L1_Data*)cache_insert(l1_cache, proc_id, addr, &dummy_line_addr, &repl_line_addr);
-    l1_data->proc_id = proc_id;
-    l1_data->dirty = write;
-  }
-  if (L1_PART_SHADOW_WARMUP)
-    cache_part_l1_warmup(proc_id, addr);
-}
-
 /**************************************************************************************/
-/* Warm up select microarchitectural structures: BP, icache, dcache,
- * and L1. No wrong path warmup. */
+/* Warm up select microarchitectural structures: BP, icache, dcache, MLC and LLC
+ * (memory/mem_warmup.c). No wrong path warmup. */
 
 void cmp_warmup(Op* op) {
   uns proc_id = op->proc_id;
@@ -475,20 +447,18 @@ void cmp_warmup(Op* op) {
   Addr dummy_line_addr2;
   Icache_Data* line_info = NULL;
 
-  // Set FDIP for this core before calling FDIP functions
-  set_fdip(proc_id, 0);
+  // Point the stage and per-core data globals (map_data, g_bp_data, FDIP, ...) at this core:
+  // freeing the op later reads map_data, and FDIP functions need their core set
+  cmp_set_all_stages(proc_id);
+  cmp_set_all_data(proc_id, 0);
 
   // Warmup caches for instructions
   Icache_Stage* ic = &(cmp_model.icache_stage[proc_id]);
-  Cache* icache = &(ic->icache);
-  Inst_Info** ic_data = (Inst_Info**)cache_access(icache, ia, &dummy_line_addr, TRUE);
+  Flag ic_hit = mem_warmup_icache(proc_id, ia, &dummy_line_addr);
   if (WP_COLLECT_STATS)
     line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ia, &dummy_line_addr2, TRUE);
 
-  if (ic_data == NULL) {
-    warmup_uncore(proc_id, ia, FALSE);
-    Addr repl_line_addr;
-    ic_data = (Inst_Info**)cache_insert(icache, proc_id, ia, &dummy_line_addr, &repl_line_addr);
+  if (!ic_hit) {
     if (WP_COLLECT_STATS) {
       Addr repl_line_addr2;
       line_info = (Icache_Data*)cache_insert(&ic->icache_line_info, proc_id, ia, &dummy_line_addr2, &repl_line_addr2);
@@ -505,28 +475,8 @@ void cmp_warmup(Op* op) {
   }
 
   // Warmup caches for data
-  Flag is_load = op->uop->mem_type == MEM_LD;
-  Flag is_store = op->uop->mem_type == MEM_ST;
-  if (is_load || is_store) {
-    Cache* dcache = &(cmp_model.dcache_stage[proc_id].dcache);
-    Dcache_Data* dc_data = cache_access(dcache, va, &dummy_line_addr, TRUE);
-    if (dc_data) {
-      // set some fields to meet expectations of the simulation mode
-      if (is_store)
-        dc_data->dirty = TRUE;
-      dc_data->read_count[0] += is_load;
-      dc_data->write_count[0] += is_store;
-    } else {
-      warmup_uncore(proc_id, va, FALSE);
-      Addr repl_line_addr;
-      dc_data = (Dcache_Data*)cache_insert(dcache, proc_id, va, &dummy_line_addr, &repl_line_addr);
-      if (dc_data->dirty)
-        warmup_uncore(proc_id, repl_line_addr, TRUE);
-      dc_data->dirty = is_store;
-      dc_data->read_count[0] = is_load;
-      dc_data->write_count[0] = is_store;
-    }
-  }
+  if (op->uop->mem_type == MEM_LD || op->uop->mem_type == MEM_ST)
+    mem_warmup_dcache(proc_id, va, op->uop->mem_type == MEM_ST);
 
   // Warmup BP for CF instructions
   if (op->uop->cf_type != NOT_CF) {
@@ -545,6 +495,13 @@ void cmp_warmup(Op* op) {
     }
     bp_retire_op(bp_data, op);
   }
+}
+
+/**************************************************************************************/
+/* cmp_warmup_done: called once when warmup ends */
+
+void cmp_warmup_done(void) {
+  mem_warmup_check();
 }
 
 static void cmp_measure_chip_util() {

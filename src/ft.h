@@ -69,6 +69,15 @@ bool ft_recovery_addr_is_consecutive(FT* ft, Addr next_start);
 void assert_ft_after_recovery(uns8 proc_id, Op* op, Addr recovery_fetch_addr);
 void ft_free_op(Op* op);
 
+/* Functional warmup (--warmup) builds on-path FTs one op at a time, so it can stop at an exact
+   instruction count; FT::build only stops at the end of an FT. The ops' parent FT is what the
+   branch predictors and BTB read, as in simulation. */
+FT* ft_warmup_alloc(uns proc_id);
+void ft_warmup_add_op(FT* ft, Op* op);  // as FT::build adds an on-path op
+bool ft_warmup_ended(FT* ft);           // the op just added ends the FT
+void ft_warmup_finish(FT* ft);          // the FT is complete (or cut at the warmup end): fill its info
+void ft_warmup_free(FT* ft);            // frees the FT and its ops
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
@@ -117,6 +126,7 @@ struct FT {
   /* kept as friend so that it can access FT internals like ops and op_pos */
   friend void generate_uop_cache_data_from_FT(FT* ft, std::vector<Uop_Cache_Data>& out);
   friend void ft_free_op(Op* op);
+  friend void ft_warmup_finish(FT* ft);  // calls generate_ft_info()
 
   // Change return type to FT_BuildResult
   FT_Event build(std::function<bool(uns8, uns8)> can_fetch_op_fn, std::function<bool(uns8, uns8, Op*)> fetch_op_fn,

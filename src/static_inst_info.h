@@ -37,7 +37,7 @@
 #include "table_info.h"
 
 /* Static register operand: id/type only. The runtime value lives in Op::src_val /
- * Op::dst_val (populated from Trace_Uop), never on the shared static struct. */
+ * Op::dst_val (filled by the uop generator), never on the shared static struct. */
 typedef struct Static_Reg_Info_struct {
   uns16 reg;      // register number within the register set
   Reg_Type type;  // integer, floating point, extra
@@ -47,7 +47,7 @@ typedef struct Static_Reg_Info_struct {
 // Max uops per macro-instruction that Static_Inst_Info keeps pointers for. Kept small on purpose --
 // this struct is interned by value, so every pointer here is paid per distinct static instruction.
 // Observed max is 7 (SPEC gcc); 16 leaves headroom. The decoder ASSERTs num_uop <= this and prints
-// the offending PC, so if a bigger macro shows up we bump it (the hard ceiling is MAX_PUP).
+// the offending PC, so if a bigger macro shows up we bump it.
 #define STATIC_INST_MAX_UOPS 16
 
 struct Static_Op_Info_struct;  // forward decl for the uops[] back-pointers below

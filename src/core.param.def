@@ -160,6 +160,13 @@ DEF_PARAM(issue_queue_traversal_priority, ISSUE_QUEUE_TRAVERSAL_PRIORITY, char*,
 
 DEF_PARAM(issue_queue_stat_collect, ISSUE_QUEUE_STAT_COLLECT, Flag, Flag, FALSE, )
 
+/********REGISTER PORT
+ * PARAMETERS*********************************************************/
+DEF_PARAM(reg_read_port_arbitrate_enable, REG_READ_PORT_ARBITRATE_ENABLE, Flag, Flag, FALSE, )
+DEF_PARAM(reg_read_port_num, REG_READ_PORT_NUM, uns, uns, 0, )
+DEF_PARAM(reg_read_port_bypass_depth, REG_READ_PORT_BYPASS_DEPTH, uns, uns, 0, )
+DEF_PARAM(reg_read_port_share, REG_READ_PORT_SHARE, Flag, Flag, FALSE, )
+
 /********EXEC PORT
  * PARAMETERS*********************************************************/
 /*Size of each RS, length should be NUM_RS, Must be type string since it is an

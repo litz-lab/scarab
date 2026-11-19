@@ -145,8 +145,8 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
   if (bp_data->crs.depth == 0) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  head:%d  tail:%d  offpath:%d\n", bp_data->crs.head, bp_data->crs.tail,
               op->off_path);
-    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
-    return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
+    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS_ON(op) + 2 * op->off_path);
+    return PERFECT_CRS_ON(op) ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
   bp_data->crs.tail = new_tail;
   bp_data->crs.depth--;
@@ -164,9 +164,9 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
             bp_data->crs.head, bp_data->crs.tail, bp_data->crs.depth,
             unsstr64(bp_data->crs.entries[bp_data->crs.tail << 1 | flag].op_num), hexstr64s(addr),
             cf_type_names[op->uop->cf_type], op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
-  mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
+  mispred = PERFECT_CRS_ON(op) ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
-  return PERFECT_CRS ? op->oracle_info.target : addr;
+  return PERFECT_CRS_ON(op) ? op->oracle_info.target : addr;
 }
 
 /**************************************************************************************/
@@ -248,9 +248,9 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
   if (bp_data->crs.depth == 0) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  next:%d  tos: %d  offpath:%d\n", bp_data->crs.next, bp_data->crs.tos,
               op->off_path);
-    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
+    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS_ON(op) + 2 * op->off_path);
     STAT_EVENT(op->proc_id, CRS_UNDERFLOW_ON_PATH + op->off_path); /*CHECK EXCLUSIVE UNDERFLOW*/
-    return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
+    return PERFECT_CRS_ON(op) ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
 
   if (CRS_REALISTIC == 2)
@@ -272,9 +272,9 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
             bp_data->crs.next, bp_data->crs.tos, bp_data->crs.depth, old_tos,
             unsstr64(bp_data->crs.entries[old_tos].op_num), hexstr64s(addr), cf_type_names[op->uop->cf_type],
             op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
-  mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
+  mispred = PERFECT_CRS_ON(op) ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
-  return PERFECT_CRS ? op->oracle_info.target : addr;
+  return PERFECT_CRS_ON(op) ? op->oracle_info.target : addr;
 }
 
 /**************************************************************************************/
@@ -443,7 +443,7 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
   }
 
   /* PERFECT_BP: for CBR/REP the direction is always known, so no_target = FALSE */
-  if (PERFECT_BP && (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP)) {
+  if (PERFECT_BP_ON(op) && (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP)) {
     btb_pred_info->no_target = FALSE;
   }
 
@@ -861,7 +861,7 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   Addr line_addr;
   Addr target;
 
-  if (PERFECT_IBP)
+  if (PERFECT_IBP_ON(op))
     return op->oracle_info.target;
 
   /* branch history can be updated in one of two ways */
@@ -966,7 +966,7 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
   uns32 tc_index;
   Addr tc_entry;
 
-  if (PERFECT_IBP)
+  if (PERFECT_IBP_ON(op))
     return op->oracle_info.target;
 
   /* branch history can be updated in one of two ways */

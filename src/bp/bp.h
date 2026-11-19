@@ -38,6 +38,15 @@
 
 #include "op.h"
 
+/* A perfect predictor is perfect on the correct path only. A wrong-path op has no real
+   outcome: the trace frontend replays the last correct-path copy of the instruction, so
+   its oracle target and direction are where that instruction went last time. Following
+   them would steer wrong-path fetch somewhere neither real nor perfect, so wrong-path
+   ops use the real predictors, which keep predicting and training as without the flag. */
+#define PERFECT_BP_ON(op) (PERFECT_BP && !(op)->off_path)
+#define PERFECT_IBP_ON(op) (PERFECT_IBP && !(op)->off_path)
+#define PERFECT_CRS_ON(op) (PERFECT_CRS && !(op)->off_path)
+
 /**************************************************************************************/
 // Branch prediction recovery information
 

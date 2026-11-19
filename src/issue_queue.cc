@@ -366,6 +366,11 @@ class SelectLogic {
   std::vector<size_t> picker_order;  // picker traversal order generated each cycle
   std::list<IssueQueueEntry*> ready_list;
 
+  // bitmask of ready but not yet issued op types in this cycle
+  uns num_ready_ops_onpath = 0;
+  uns64 ready_not_issued_op_types = 0;
+  std::vector<uns64> ready_not_issued_op_types_per_fu;
+
  public:
   explicit SelectLogic(uns proc_id, uns16 queue_id, std::vector<FunctionalUnitPicker> connected_fu_pickers,
                        std::unique_ptr<SchedulePolicy> sched_policy, std::unique_ptr<TraversalPolicy> traversal_policy,
@@ -387,6 +392,8 @@ class SelectLogic {
   void release(IssueQueueEntry* entry) { ready_list.remove(entry); }
 
   bool has_ready_ops() const { return !ready_list.empty(); }
+  uns get_num_ready_ops_onpath() const { return num_ready_ops_onpath; }
+  uns64 get_ready_not_issued_op_types() const { return ready_not_issued_op_types; }
 
   void collect_entry_op_ready_stats(IssueQueueEntry* entry, IssueQueueStats& stats_across_queue);
   void collect_entry_op_ready_unissued_stats(IssueQueueEntry* entry, IssueQueueStats& stats_across_queue);
@@ -405,12 +412,18 @@ class SelectLogic {
 // pick ready ops for issue according to the scheduling policy and picker traversal order
 void SelectLogic::bid(IssueQueueStats& stats_across_queue) {
   traversal_policy->build_picker_order(picker_order);
+  ready_not_issued_op_types = 0;
+  ready_not_issued_op_types_per_fu.assign(connected_fu_pickers.size(), 0);
+  num_ready_ops_onpath = 0;
 
   for (IssueQueueEntry* entry : ready_list) {
     // check if the op is ready (it may become not ready due to memory blocking or waiting for forwarding)
     if (entry->state != ISSUE_QUEUE_ENTRY_STATE_READY || !issue_queue_check_op_ready(entry->op)) {
       continue;
     }
+
+    if (!entry->op->off_path)
+      num_ready_ops_onpath++;
 
     // the current request propagated through the serial picker chain
     IssueQueueEntry* request_entry = entry;
@@ -801,6 +814,8 @@ class IssueQueue {
   void grant(IssueQueueStats& stats_across_queue) { select_logic->grant(stats_across_queue); }
 
   bool has_ready_ops() const { return select_logic->has_ready_ops(); }
+  uns get_num_ready_ops_onpath() const { return select_logic->get_num_ready_ops_onpath(); };
+  uns get_ready_not_issued_op_types() const { return select_logic->get_ready_not_issued_op_types(); };
 };
 
 IssueQueue::IssueQueue(uns proc_id, uns16 queue_id, uns16 size, std::vector<FunctionalUnitPicker> connected_fu_pickers)
@@ -1056,13 +1071,19 @@ void IssueQueues::schedule() {
   // checks if any of the L1 MSHRs have become available
   update_mem_block();
 
-  // reset the stats at the beginning of each cycle before aggregation
   stats_across_queue.clear();
 
-  // each issue queue scans its ready ops and sends requests to the pickers
+  std::vector<uns64> ready_not_issued_op_types_total;
+  uns num_ready_ops_total_onpath = 0;
+
   for (IssueQueue& queue : issue_queues) {
     queue.bid(stats_across_queue);
+    ready_not_issued_op_types_total.push_back(queue.get_ready_not_issued_op_types());
+    num_ready_ops_total_onpath += queue.get_num_ready_ops_onpath();
   }
+  uns unused_ilp_slots_onpath = DISPATCH_WIDTH - MIN2(DISPATCH_WIDTH, num_ready_ops_total_onpath);
+
+  INC_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS_ONPATH, unused_ilp_slots_onpath);
 
   // each issue queue issues the picked ops to SD, which will be sent to the FUs in the next cycle
   for (IssueQueue& queue : issue_queues) {

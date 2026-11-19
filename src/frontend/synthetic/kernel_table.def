@@ -1,0 +1,8 @@
+// Format: enum name, text name, function name prefix
+KERNEL_IMPL(MEM_FU_LIMITED,              "mem_fu_limited")                    
+KERNEL_IMPL(LOAD_LATENCY_LIMITED,        "load_latency_limited")                               
+KERNEL_IMPL(ILP_LIMITED,                 "ilp_limited")                                
+KERNEL_IMPL(CBR_LIMITED,                 "cbr_limited")                                          
+KERNEL_IMPL(BTB_LIMITED,                 "btb_limited")            
+KERNEL_IMPL(IBR_LIMITED,                 "ibr_limited")  
+KERNEL_IMPL(ICACHE_LIMITED,              "icache_limited")                               

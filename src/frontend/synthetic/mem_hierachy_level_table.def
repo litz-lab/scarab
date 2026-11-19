@@ -1,0 +1,12 @@
+// Format: enum name, text name, function name prefix
+MEMORY_HIERACHY_LEVEL_IMPL( MLC_LEVEL, "mlc_level")
+MEMORY_HIERACHY_LEVEL_IMPL( LLC_LEVEL, "llc_level")
+MEMORY_HIERACHY_LEVEL_IMPL( MEM_LEVEL, "mem_level")
+MEMORY_HIERACHY_LEVEL_IMPL( DCACHE_LEVEL, "dcache_level")
+
+/*
+  MLC_LEVEL,
+  LLC_LEVEL,
+  MEM_LEVEL,
+  DCACHE_LEVEL
+*/

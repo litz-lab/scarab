@@ -150,7 +150,7 @@ typedef struct ctype_pin_inst_static_struct {
   // used to flag scarab marker roi begin
   uint8_t scarab_marker_roi_end : 1;
   // set by MEMTRACE frontend on synthetic gap-patch-jmp / ctx-switch-barrier records to
-  // exclude them from trace_fe.cc's pc_to_inst cache
+  // exclude them from trace_fe.cc's wrong-path replay
   uint8_t is_trace_patch : 1;
 
   Wrongpath_Nop_Mode_Reason fake_inst_reason;

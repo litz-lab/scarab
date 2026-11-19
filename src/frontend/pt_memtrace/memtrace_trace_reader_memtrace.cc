@@ -994,7 +994,10 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
 void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem, instr_t* predecoded) {
   assert(mt_ref_.instr.size);
   _info->pc = mt_ref_.instr.addr;
+  ReplayRecord replay = {};  // a re-sent encoding keeps the PC's wrong-path replay
   if (mt_ref_.instr.encoding_is_new) {
+    if (const DecodedInst* old = decode_cache_find(proc_id_, mt_ref_.instr.addr))
+      replay = old->replay;
     decode_cache_erase(proc_id_, mt_ref_.instr.addr);
   }
   DecodedInst* decoded = decode_cache_find(proc_id_, mt_ref_.instr.addr);
@@ -1007,6 +1010,7 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
     cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
     decoded =
         decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, cinst.st.num_ld + cinst.st.num_st, false, false});
+    decoded->replay = replay;
   } else {
     assert(decoded != nullptr);
     decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
@@ -1043,7 +1047,10 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
   _info->pc = mt_ref_.instr.addr;
   mt_prior_isize_ = mt_ref_.instr.size;
 
+  ReplayRecord replay = {};  // a re-sent encoding keeps the PC's wrong-path replay
   if (mt_ref_.instr.encoding_is_new) {
+    if (const DecodedInst* old = decode_cache_find(proc_id_, mt_ref_.instr.addr))
+      replay = old->replay;
     decode_cache_erase(proc_id_, mt_ref_.instr.addr);
   }
   DecodedInst* decoded = decode_cache_find(proc_id_, mt_ref_.instr.addr);
@@ -1113,6 +1120,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
     cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
 
     decoded = decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, n_used_mem_ops, unknown_type, is_rep});
+    decoded->replay = replay;
   } else {
     decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
   }

@@ -144,7 +144,6 @@ typedef struct ctype_pin_inst_static_struct {
   uint8_t is_gather_scatter : 1;
   uint8_t is_sentinel : 1;
   uint8_t fake_inst : 1;
-  uint8_t encoding_is_new : 1;
   // used to flag scarab marker roi begin
   uint8_t scarab_marker_roi_begin : 1;
   // used to flag scarab marker roi begin

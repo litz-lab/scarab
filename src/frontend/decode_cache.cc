@@ -51,18 +51,13 @@ struct EncodingKeyHash {
     return h ^ k.size;
   }
 };
-struct PcEntries {
-  DecodedInst* current = nullptr;  // the encoding the readers see
-  DecodedInst* replay = nullptr;   // the encoding of the last on-path instance
-};
-
 static_assert(offsetof(DecodedInst, inst) == 0, "InstInfo aliases DecodedInst* with its inst");
 static std::unordered_map<EncodingKey, DecodedInst, EncodingKeyHash> encodings[MAX_NUM_PROCS];
-static std::unordered_map<uint64_t, PcEntries> pcs[MAX_NUM_PROCS];
+static std::unordered_map<uint64_t, DecodedInst*> current[MAX_NUM_PROCS];  // each PC's current encoding
 
 DecodedInst* decode_cache_find(uns proc_id, uint64_t pc) {
-  auto it = pcs[proc_id].find(pc);
-  return it == pcs[proc_id].end() ? nullptr : it->second.current;
+  auto it = current[proc_id].find(pc);
+  return it == current[proc_id].end() ? nullptr : it->second;
 }
 
 DecodedInst* decode_cache_find_encoding(uns proc_id, uint64_t pc, uint64_t lsb, uint64_t msb, uint8_t size) {
@@ -71,10 +66,10 @@ DecodedInst* decode_cache_find_encoding(uns proc_id, uint64_t pc, uint64_t lsb, 
 }
 
 void decode_cache_make_current(uns proc_id, uint64_t pc, DecodedInst* decoded) {
-  DecodedInst*& current = pcs[proc_id][pc].current;
-  if (current && current != decoded)
+  DecodedInst*& cur = current[proc_id][pc];
+  if (cur && cur != decoded)
     STAT_EVENT(proc_id, DECODE_CACHE_REENCODE);
-  current = decoded;
+  cur = decoded;
 }
 
 DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const DecodedInst& decoded) {
@@ -85,17 +80,6 @@ DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const DecodedInst& de
   d->inst.instruction_addr = convert_to_cmp_addr(proc_id, pc);
   decode_cache_make_current(proc_id, pc, d);
   return d;
-}
-
-DecodedInst* decode_cache_replay_entry(uns proc_id, uint64_t pc) {
-  auto it = pcs[proc_id].find(pc);
-  return it == pcs[proc_id].end() ? nullptr : it->second.replay;
-}
-
-DecodedInst*& decode_cache_replay_slot(uns proc_id, uint64_t pc) {
-  auto it = pcs[proc_id].find(pc);
-  ASSERT(proc_id, it != pcs[proc_id].end());
-  return it->second.replay;
 }
 
 DecodedInst* decode_cache_static(uns proc_id, const ctype_pin_inst_static* st) {

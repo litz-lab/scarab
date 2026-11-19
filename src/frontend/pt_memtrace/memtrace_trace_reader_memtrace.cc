@@ -681,10 +681,8 @@ PATCH_REP:
       // their target varies per execution.
 
       if (non_seq && _prior->static_info && _prior->static_info->cf_type == CF_CBR) {
-        if (_prior->static_info->branch_target != (Addr)_info->pc) {
+        if (_prior->static_info->branch_target != (Addr)_info->pc)
           const_cast<ctype_pin_inst_static*>(_prior->static_info)->branch_target = _info->pc;
-          const_cast<ctype_pin_inst_static*>(_prior->static_info)->encoding_is_new = true;
-        }
       }
     } else if (_prior->pc && non_seq &&
                (!is_rep || (_prior->pc != _info->pc && (_prior->pc + prior_isize) != _info->pc))) {
@@ -1019,11 +1017,8 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
 
     fill_in_basic_info(&cinst, predecoded, mt_ref_.instr.size, mt_ref_.instr.type);
     add_dependency_info(&cinst, predecoded);
-    cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
     decoded =
         decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, cinst.st.num_ld + cinst.st.num_st, false, false});
-  } else {
-    decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
   }
 
   mt_mem_ops_ = decoded->num_mem_ops;
@@ -1121,11 +1116,8 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
     fill_in_simd_info(&cinst, xed_ins, max_op_width);
     apply_x87_bug_workaround(&cinst, xed_ins);
     fill_in_cf_info(&cinst, xed_ins);
-    cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
 
     decoded = decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, n_used_mem_ops, unknown_type, is_rep});
-  } else {
-    decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
   }
 
   mt_mem_ops_ = decoded->num_mem_ops;

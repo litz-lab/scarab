@@ -109,8 +109,6 @@ static void replay_instance(uns proc_id, ctype_pin_inst* inst, uint64_t pc, cons
     inst->st = d->inst;
     inst->decoded = const_cast<DecodedInst*>(d);
     inst->st.encoding_is_new = d->replay.encoding_is_new;
-    inst->st.num_ld = d->replay.num_ld;
-    inst->st.num_st = d->replay.num_st;
   }
   inst->st.instruction_addr = pc;
   inst->st.branch_target = d->replay.branch_target;

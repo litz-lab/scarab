@@ -1045,7 +1045,14 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   if (!UPDATE_BP_OFF_PATH && op->off_path) {
     return;
   }
-  ASSERT(op->proc_id, op_oracle_known(op));
+  ASSERTM(op->proc_id, op_oracle_known(op),
+          "op_num:%llu off_path:%d cf:%d dir:%d target:0x%llx npc:0x%llx pc:0x%llx bom:%d eom:%d inst_uid:%llu "
+          "fake:%d patch:%d recovery_point:%d pred:%d pred_npc:0x%llx\n",
+          (unsigned long long)op->op_num, op->off_path, op->uop->cf_type, op->oracle_info.dir,
+          (unsigned long long)op->oracle_info.target, (unsigned long long)op->oracle_info.npc,
+          (unsigned long long)op->inst->instruction_addr, op->bom, op->eom, (unsigned long long)op->inst_uid,
+          op->inst->fake_inst, op->inst->is_trace_patch, op->bp_pred_info->recovery_point, op->bp_pred_info->pred,
+          (unsigned long long)op->bp_pred_info->pred_npc);
   // Always train both predictors regardless of which one made the active prediction.
   op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
   bp_data->bp->update_func(op, BP_PRED_MAIN);

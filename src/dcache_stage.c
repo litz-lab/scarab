@@ -168,7 +168,7 @@ void recover_dcache_stage() {
     if (op && IS_FLUSHING_OP(op)) {
       op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(dc->proc_id, "Recovery op found in Dcache slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
-            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->addr);
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->instruction_addr);
     }
     if (op && op->op_num > bp_recovery_info->recovery_op_num) {
       DEBUG(dc->proc_id, "Dcache flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
@@ -545,8 +545,8 @@ static inline void dcache_hit_wp_collect_stats(Dcache_Data* line, Op* op) {
   }
 
   DEBUG(0, "Dcache hit: On path hits off path. va:%s op:%s op:0x%s wp_op:0x%s opu:%s wpu:%s dist:%s%s\n",
-        hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst->addr), hexstr64s(line->offpath_op_addr),
-        unsstr64(op->unique_num), unsstr64(line->offpath_op_unique),
+        hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst->instruction_addr),
+        hexstr64s(line->offpath_op_addr), unsstr64(op->unique_num), unsstr64(line->offpath_op_unique),
         op->unique_num > line->offpath_op_unique ? " " : "-",
         op->unique_num > line->offpath_op_unique ? unsstr64(op->unique_num - line->offpath_op_unique)
                                                  : unsstr64(line->offpath_op_unique - op->unique_num));
@@ -629,12 +629,12 @@ static inline void dcache_cacheline_hit(Op* op, Addr line_addr, Dcache_Data* lin
   if (PREF_FRAMEWORK_ON && (PREF_UPDATE_ON_WRONGPATH || !op->off_path)) {
     // if framework is on use new prefetcher. otherwise old one
     if (line->HW_prefetch) {
-      pref_dl0_pref_hit(dc->proc_id, line_addr, op->inst->addr, line->prefetcher_id);
+      pref_dl0_pref_hit(dc->proc_id, line_addr, op->inst->instruction_addr, line->prefetcher_id);
       line->HW_prefetch = FALSE;
       STAT_EVENT(dc->proc_id, PREF_DCACHE_TOTAL_USED);
       STAT_EVENT(dc->proc_id, CORE_PREF_DCACHE_USED);
     } else {
-      pref_dl0_hit(line_addr, op->inst->addr);
+      pref_dl0_hit(line_addr, op->inst->instruction_addr);
     }
   } else if ((STREAM_TRAIN_ON_WRONGPATH || !op->off_path) && line->HW_prefetch) {
     // old prefetcher code
@@ -713,7 +713,7 @@ static inline void dcache_cacheline_miss(Op* op, Addr line_addr, Counter access_
       }
 
       if (PREF_UPDATE_ON_WRONGPATH || !op->off_path) {
-        pref_dl0_miss(line_addr, op->inst->addr);
+        pref_dl0_miss(line_addr, op->inst->instruction_addr);
       }
 
       if (ONE_MORE_CACHE_LINE_ENABLE) {

@@ -95,7 +95,7 @@ typedef enum Wrongpath_Nop_Mode_Reason_enum {
 } Wrongpath_Nop_Mode_Reason;
 
 // Everything decoding determines about an instruction. Trace frontends cache it per PC
-// (frontend/pt_memtrace/decode_cache.h) and copy it into each instance.
+// (frontend/decode_cache.h) and copy it into each instance.
 typedef struct ctype_pin_inst_static_struct {
   uint64_t instruction_addr;  // 8 bytes
   uint8_t size;               // 5 bits
@@ -164,6 +164,7 @@ typedef struct ctype_pin_inst_struct {
   /* dynamic information: different for each instance */
 
   uint64_t inst_uid;  // unique ID produced by the frontend
+  struct DecodedInst* decoded;  // the instance's decode-cache entry (frontend/decode_cache.h), NULL if none
 
   Pin_Reg_Val srcs[MAX_SRCS];
   Pin_Reg_Val dests[MAX_DESTS];

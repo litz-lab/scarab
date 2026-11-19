@@ -32,7 +32,7 @@
 #include <cstring>
 #include <iostream>
 
-#include "frontend/pt_memtrace/decode_cache.h"
+#include "frontend/decode_cache.h"
 #include "pin/pin_lib/gather_scatter_addresses.h"
 #include "pin/pin_lib/x86_decoder.h"
 
@@ -991,35 +991,28 @@ void TraceReaderMemtrace::fill_in_basic_info(ctype_pin_inst* info, instr_t* drin
   info->st.scarab_marker_roi_end = false;
 }
 
-// True if this record's encoding has the bytes the entry was decoded from.
-bool TraceReaderMemtrace::sameEncoding(const DecodedInst* decoded) const {
+// The decode-cache entry for this record, or null if it must be decoded. A record with an
+// encoding (encoding_is_new; the trace re-sends it at every chunk) is looked up by its bytes and
+// becomes the PC's current encoding; one without uses the PC's current encoding.
+DecodedInst* TraceReaderMemtrace::lookupDecoded() {
+  const uint64_t pc = mt_ref_.instr.addr;
+  if (!mt_ref_.instr.encoding_is_new)
+    return decode_cache_find(proc_id_, pc);
   uint64_t lsb = 0, msb = 0;  // first and last 8 bytes, as fill_in_basic_info stores them
   for (size_t ii = 0; ii < 8 && ii < mt_ref_.instr.size; ii++)
     lsb = (lsb << 8) + mt_ref_.instr.encoding[ii];
   for (size_t ii = 0; ii < 16 && ii < mt_ref_.instr.size; ii++)
     msb = (msb << 8) + mt_ref_.instr.encoding[ii];
-  return decoded->inst.size == mt_ref_.instr.size && decoded->inst.inst_binary_lsb == lsb &&
-         decoded->inst.inst_binary_msb == msb;
-}
-
-// The decode-cache entry for this record's PC, or null if it must be decoded. A trace re-sends an
-// instruction's encoding (encoding_is_new) at every chunk; only changed bytes drop the entry, and
-// its wrong-path replay record moves to the re-decoded one, as the replay buffer kept its copy.
-DecodedInst* TraceReaderMemtrace::lookupDecoded(ReplayRecord* replay) {
-  DecodedInst* decoded = decode_cache_find(proc_id_, mt_ref_.instr.addr);
-  if (decoded && mt_ref_.instr.encoding_is_new && !sameEncoding(decoded)) {
-    *replay = decoded->replay;
-    decode_cache_erase(proc_id_, mt_ref_.instr.addr);
-    decoded = nullptr;
-  }
+  DecodedInst* decoded = decode_cache_find_encoding(proc_id_, pc, lsb, msb, mt_ref_.instr.size);
+  if (decoded)
+    decode_cache_make_current(proc_id_, pc, decoded);
   return decoded;
 }
 
 void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem, instr_t* predecoded) {
   assert(mt_ref_.instr.size);
   _info->pc = mt_ref_.instr.addr;
-  ReplayRecord replay = {};
-  DecodedInst* decoded = lookupDecoded(&replay);
+  DecodedInst* decoded = lookupDecoded();
   if (decoded == nullptr) {
     assert(mt_ref_.instr.encoding_is_new && predecoded != nullptr);
     ctype_pin_inst cinst = {};
@@ -1029,7 +1022,6 @@ void TraceReaderMemtrace::processDrIsaInst(InstInfo* _info, bool has_another_mem
     cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
     decoded =
         decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, cinst.st.num_ld + cinst.st.num_st, false, false});
-    decoded->replay = replay;
   } else {
     decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
   }
@@ -1065,8 +1057,7 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
   _info->pc = mt_ref_.instr.addr;
   mt_prior_isize_ = mt_ref_.instr.size;
 
-  ReplayRecord replay = {};
-  DecodedInst* decoded = lookupDecoded(&replay);
+  DecodedInst* decoded = lookupDecoded();
   if (decoded == nullptr) {
     // XED decode into a stack-local inst (only the ctype_pin_inst is cached)
     xed_decoded_inst_t xed_inst;
@@ -1133,7 +1124,6 @@ void TraceReaderMemtrace::processInst(InstInfo* _info, [[maybe_unused]] instr_t*
     cinst.st.encoding_is_new = mt_ref_.instr.encoding_is_new;
 
     decoded = decode_cache_insert(proc_id_, mt_ref_.instr.addr, {cinst.st, n_used_mem_ops, unknown_type, is_rep});
-    decoded->replay = replay;
   } else {
     decoded->inst.encoding_is_new = mt_ref_.instr.encoding_is_new;
   }

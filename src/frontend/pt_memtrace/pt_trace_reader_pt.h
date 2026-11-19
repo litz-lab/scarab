@@ -42,7 +42,7 @@
 
 #include "general.param.h"
 
-#include "frontend/pt_memtrace/decode_cache.h"
+#include "frontend/decode_cache.h"
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
 #include "pin/pin_lib/x86_decoder.h"
 

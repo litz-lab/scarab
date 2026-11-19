@@ -25,7 +25,7 @@
  * Author       : Litz Lab
  * Description  : AsmDB-style per-PC attribution (--pc_profile 1). See pcprof.h.
  *
- * Everything is keyed by the static instruction address (op->inst->addr, the raw
+ * Everything is keyed by the static instruction address (op->inst->instruction_addr, the raw
  * trace PC). Counts are taken over the measured region only: from the cycle full_warmup
  * is reached (warmup_dump_done[0]) to the end of the simulation, for on-path retired ops
  * unless a column says otherwise.
@@ -436,7 +436,7 @@ extern "C" void pcprof_recovery(Op* op) {
     return;
   g->in_recovery = TRUE;
   g->recovery_exec = at_exec;
-  g->recovery_pc = op->inst->addr;
+  g->recovery_pc = op->inst->instruction_addr;
 }
 
 extern "C" void pcprof_rob_insert(Op* op) {
@@ -444,7 +444,7 @@ extern "C" void pcprof_rob_insert(Op* op) {
     return;
   ensure();
   if (g->pending_fe) {
-    recs(op->inst->addr).add(C_ST_FE, g->pending_fe);
+    recs(op->inst->instruction_addr).add(C_ST_FE, g->pending_fe);
     g->pending_fe = 0;
   }
   g->in_recovery = FALSE;
@@ -528,7 +528,7 @@ extern "C" void pcprof_retire(Op* op) {
   if (!measuring())
     return;
 
-  const Addr pc = op->inst->addr;
+  const Addr pc = op->inst->instruction_addr;
   R r = recs(pc);
   r.add(C_UOPS);
   if (op->eom) {

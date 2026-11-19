@@ -147,6 +147,7 @@ int pt_trace_read(int proc_id, ctype_pin_inst* pt_next_pi) {
   const DecodedInst* decoded = insi->decoded;
   init_ctype_pin_inst(pt_next_pi);
   pt_next_pi->st = decoded->inst;
+  pt_next_pi->decoded = const_cast<DecodedInst*>(decoded);
   pt_fill_in_dynamic_info(pt_next_pi, insi);
   if (decoded->cf_sets_target)
     pt_next_pi->st.branch_target = decoded->inst.branch_target;  // static direct target, as fill_in_cf_info set it

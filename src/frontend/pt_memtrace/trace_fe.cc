@@ -94,7 +94,12 @@ void buf_map_remove(uns proc_id) {
 
 // Rebuild the last on-path instance of a PC from its decode-cache entry: the decoded
 // instruction, or the PT fake that replaced it, plus the recorded per-instance fields.
-static void replay_instance(ctype_pin_inst* inst, uint64_t pc, const DecodedInst* d) {
+static void replay_instance(uns proc_id, ctype_pin_inst* inst, uint64_t pc, const DecodedInst* d) {
+  STAT_EVENT(proc_id, WP_REPLAY_INST);
+  if (d->replay.fake)
+    STAT_EVENT(proc_id, WP_REPLAY_PT_FAKE);
+  else if (d->replay.num_ld != d->inst.num_ld || d->replay.num_st != d->inst.num_st)
+    STAT_EVENT(proc_id, WP_REPLAY_MEM_DROPPED);
   if (d->replay.fake == WPNM_FAKE_NOP) {
     *inst = create_dummy_nop(pc, WPNM_FAKE_NOP, d->inst.size);
   } else if (d->replay.fake == WPNM_FAKE_JMP) {
@@ -124,7 +129,7 @@ static void replay_instance(ctype_pin_inst* inst, uint64_t pc, const DecodedInst
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
   const DecodedInst* d = decode_cache_replay_entry(proc_id, *off_path_addr);
   if (d) {
-    replay_instance(inst, *off_path_addr, d);
+    replay_instance(proc_id, inst, *off_path_addr, d);
     (*off_path_addr) += inst->st.size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->st.instruction_addr, inst->st.size);
   } else {

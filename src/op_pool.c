@@ -65,7 +65,6 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 #define DEBUGU(proc_id, args...) _DEBUGU(proc_id, DEBUG_OP_POOL, ##args)
 
 // TODO: it should be increased to 512 to use more than 50,000 FDIP lookahead buffer entries
-// Also need to increase if enabling large lookahead buffer
 #define OP_POOL_ENTRIES_INC 128 /* default 128 */
 
 /**************************************************************************************/
@@ -73,6 +72,7 @@ allocates them once and then hands out pointers every time 'alloc_op' is called.
 
 uns op_pool_entries = 0;
 uns op_pool_active_ops = 0;
+static uns op_pool_held_ops = 0;  // active ops held outside the pipeline
 static Op* op_pool_free_head;
 
 Op invalid_op;
@@ -108,6 +108,7 @@ void reset_op_pool() {
   DEBUGU(0, "Resetting op pool...\n");
   op_pool_entries = 0;
   op_pool_active_ops = 0;
+  op_pool_held_ops = 0;
 }
 
 /**************************************************************************************/
@@ -293,6 +294,21 @@ void op_pool_setup_op(uns proc_id, Op* op) {
 }
 
 /**************************************************************************************/
+/* op_pool_hold: exempts ops held outside the pipeline from the leak check */
+
+void op_pool_hold(uns num_ops) {
+  op_pool_held_ops += num_ops;
+}
+
+/**************************************************************************************/
+/* op_pool_release: ends the leak-check exemption for ops entering the pipeline */
+
+void op_pool_release(uns num_ops) {
+  ASSERT(0, op_pool_held_ops >= num_ops);
+  op_pool_held_ops -= num_ops;
+}
+
+/**************************************************************************************/
 /* expand_op_pool: */
 
 static inline void expand_op_pool() {
@@ -312,5 +328,6 @@ static inline void expand_op_pool() {
   op_pool_init_op(&new_pool[ii]);
 
   op_pool_free_head = &new_pool[0];
-  ASSERT(0, op_pool_entries <= OP_POOL_ENTRIES_INC * 128);
+  // leak check (held ops are not leaked)
+  ASSERT(0, op_pool_entries <= OP_POOL_ENTRIES_INC * 128 + op_pool_held_ops);
 }

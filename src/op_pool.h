@@ -51,6 +51,8 @@ Op* alloc_op(uns proc_id);
 void free_op(Op*);
 void op_pool_init_op(Op*);
 void op_pool_setup_op(uns proc_id, Op* op);
+void op_pool_hold(uns num_ops);
+void op_pool_release(uns num_ops);
 
 /**************************************************************************************/
 

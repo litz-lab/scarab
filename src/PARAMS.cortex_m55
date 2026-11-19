@@ -40,7 +40,7 @@
 # BTB model to use.
 --btb_mech                      generic
 --btb_entries                   6144
---btb_assoc                     4
+--btb_assoc                     3                         # 2048 sets; entries / assoc must be a power of two
 
 # Allow the BTB to be updated by off path ops. 
 --btb_off_path_writes           1

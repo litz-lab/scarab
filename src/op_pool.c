@@ -128,7 +128,7 @@ Dynamic_Inst* alloc_dyn_inst(void) {
 }
 
 void dyn_inst_attach(Dynamic_Inst* di, Op* op) {
-  ASSERT(op->proc_id, di && op->uop && op->uop->uop_seq_num < op->inst->num_uop);
+  ASSERT(op->proc_id, di && op->uop && op->uop->uop_seq_num < op->uop->num_uop);
   op->dyn_inst = di;
   di->uops[op->uop->uop_seq_num] = op;
 }
@@ -140,26 +140,26 @@ void free_dyn_inst(Dynamic_Inst* di) {
 }
 
 /**************************************************************************************/
-/* Fake-op Static_Inst_Info pool: fake (wrong-path-nop) ops cannot be interned (their addresses are
-   synthesized), so each needs its own. Recycled through a free list rather than malloc'd per op; the
-   caller overwrites the whole struct from a per-kind template, so no clearing is needed here. */
+/* Per-op static part of fake ops and trace patches (see alloc_op_static_inst): recycled through a
+   free list rather than malloc'd per op; the caller overwrites the whole struct. */
 
-static Static_Inst_Info* fake_static_inst_free_list = NULL;
+static ctype_pin_inst_static** op_static_free = NULL;  // stack of recycled structs
+static uns op_static_free_count = 0;
+static uns op_static_free_size = 0;
 
-Static_Inst_Info* alloc_fake_static_inst(void) {
-  Static_Inst_Info* si = fake_static_inst_free_list;
-  if (si) {
-    fake_static_inst_free_list = si->free_list_next;
-  } else {
-    si = (Static_Inst_Info*)malloc(sizeof(*si));
-  }
-  return si;
+ctype_pin_inst_static* alloc_op_static_inst(void) {
+  if (op_static_free_count)
+    return op_static_free[--op_static_free_count];
+  return (ctype_pin_inst_static*)malloc(sizeof(ctype_pin_inst_static));
 }
 
-void free_fake_static_inst(Static_Inst_Info* si) {
-  ASSERT(0, si);
-  si->free_list_next = fake_static_inst_free_list;
-  fake_static_inst_free_list = si;
+void free_op_static_inst(ctype_pin_inst_static* st) {
+  ASSERT(0, st);
+  if (op_static_free_count == op_static_free_size) {
+    op_static_free_size = op_static_free_size ? 2 * op_static_free_size : 1024;
+    op_static_free = (ctype_pin_inst_static**)realloc(op_static_free, op_static_free_size * sizeof(*op_static_free));
+  }
+  op_static_free[op_static_free_count++] = st;
 }
 
 /* alloc_op:  returns a pointer to the next available op */
@@ -205,9 +205,9 @@ void free_op(Op* op) {
   if (op->inst && op->uop->mem_type == MEM_ST)
     map_dep_remove_store(op);
 
-  if (op->inst && op->inst->fake_inst) {
-    // fake ops get their own Static_Inst_Info; their Static_Op_Info is shared, so it is not freed
-    free_fake_static_inst(op->inst);
+  if (op->inst && (op->inst->fake_inst || op->inst->is_trace_patch)) {
+    // fake ops and trace patches get their own static part; their Static_Op_Info is shared
+    free_op_static_inst((ctype_pin_inst_static*)op->inst);
     op->inst = NULL;
     op->uop = NULL;
   }

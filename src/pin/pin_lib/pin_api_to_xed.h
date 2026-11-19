@@ -49,7 +49,7 @@ enum TracePatch : uint8_t {
   TRACE_PATCH_NOP,       // undecodable record replaced with a same-length NOP
 };
 
-struct DecodedInst;  // frontend/pt_memtrace/decode_cache.h
+struct DecodedInst;  // frontend/decode_cache.h
 
 struct InstInfo {
   uint64_t pc = 0;  // instruction address

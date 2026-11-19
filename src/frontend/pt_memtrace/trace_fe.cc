@@ -10,8 +10,8 @@
 #include "bp/bp.param.h"
 
 #include "bp/bp.h"
+#include "frontend/decode_cache.h"
 #include "frontend/frontend_intf.h"
-#include "frontend/pt_memtrace/decode_cache.h"
 #include "frontend/pt_memtrace/memtrace_fe.h"
 #include "frontend/pt_memtrace/pt_fe.h"
 #include "isa/isa.h"
@@ -102,6 +102,7 @@ static void replay_instance(ctype_pin_inst* inst, uint64_t pc, const DecodedInst
   } else {
     init_ctype_pin_inst(inst);
     inst->st = d->inst;
+    inst->decoded = const_cast<DecodedInst*>(d);
     inst->st.encoding_is_new = d->replay.encoding_is_new;
     inst->st.num_ld = d->replay.num_ld;
     inst->st.num_st = d->replay.num_st;
@@ -121,8 +122,8 @@ static void replay_instance(ctype_pin_inst* inst, uint64_t pc, const DecodedInst
 }
 
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
-  const DecodedInst* d = decode_cache_find(proc_id, *off_path_addr);
-  if (d && d->replay.valid) {
+  const DecodedInst* d = decode_cache_replay_entry(proc_id, *off_path_addr);
+  if (d) {
     replay_instance(inst, *off_path_addr, d);
     (*off_path_addr) += inst->st.size;
     DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->st.instruction_addr, inst->st.size);
@@ -203,12 +204,16 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
       } else if (!next_onpath_pi[proc_id].st.is_trace_patch) {
         const ctype_pin_inst& pi = next_onpath_pi[proc_id];
         uint64_t addr = pi.st.instruction_addr;
-        DecodedInst* d = decode_cache_find(proc_id, addr);
+        // The entry of this instance's encoding records it; a PT fake records into the decoded
+        // instruction it replaced. last holds the PC's previous on-path instance.
+        DecodedInst* d = pi.st.fake_inst ? decode_cache_find(proc_id, addr) : pi.decoded;
         ASSERT(proc_id, d);
+        DecodedInst*& replay = decode_cache_replay_slot(proc_id, addr);
+        const DecodedInst* last = replay;
         // A PT fake carries no instruction bytes; the decoded instruction does.
-        uint64_t last_lsb = d->replay.fake ? 0 : d->inst.inst_binary_lsb;
-        uint64_t last_msb = d->replay.fake ? 0 : d->inst.inst_binary_msb;
-        if (!d->replay.valid) {
+        uint64_t last_lsb = last && !last->replay.fake ? last->inst.inst_binary_lsb : 0;
+        uint64_t last_msb = last && !last->replay.fake ? last->inst.inst_binary_msb : 0;
+        if (!last) {
         } else if (pi.st.encoding_is_new) {
           STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
         } else if (pi.st.inst_binary_lsb != last_lsb || pi.st.inst_binary_msb != last_msb) {
@@ -216,7 +221,7 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
                 pi.st.size, pi.st.inst_binary_lsb, pi.st.inst_binary_msb);
           // Handle jitted code
           STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-        } else if (pi.instruction_next_addr != d->replay.next_addr) {
+        } else if (pi.instruction_next_addr != last->replay.next_addr) {
           STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + pi.st.op_type);
         } else {
           // replayed addresses are poisoned, so an instance never matches them
@@ -226,7 +231,6 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
           ASSERT(proc_id, pi.st.fake_inst_reason == WPNM_FAKE_NOP || pi.st.fake_inst_reason == WPNM_FAKE_JMP);
           ASSERT(proc_id, pi.st.size == (pi.st.fake_inst_reason == WPNM_FAKE_NOP ? d->inst.size : 5));
         }
-        d->replay.valid = true;
         d->replay.fake = pi.st.fake_inst ? pi.st.fake_inst_reason : 0;
         d->replay.taken = pi.actually_taken;
         d->replay.exit = pi.exit;
@@ -238,6 +242,7 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         d->replay.next_addr = pi.instruction_next_addr;
         d->replay.branch_target = pi.st.branch_target;
         d->replay.inst_uid = pi.inst_uid;
+        replay = d;
       }
     } else {
       off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);

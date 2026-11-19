@@ -37,8 +37,8 @@ struct Op_struct;
  * shared by all of those uops. Pool-allocated when the macro begins building in an FT and recycled
  * when its end-of-macro (last) uop is freed -- which, because uops retire/free in order, is the last
  * of them to go. Lets any uop reach its siblings -- e.g. the eom -- directly, without walking the FT.
- * Distinct from Static_Inst_Info, which is interned/shared across every dynamic instance of the same
- * PC (and already holds the uop count, so it is not duplicated here). */
+ * Distinct from op->inst (the decoded instruction, shared by every instance of the PC); the uop
+ * count is on each uop (op->uop->num_uop), so it is not duplicated here. */
 typedef struct Dynamic_Inst_struct {
   struct Op_struct* uops[STATIC_INST_MAX_UOPS];  // the dynamic uop ops, indexed by uop_seq_num
   struct Dynamic_Inst_struct* free_list_next;    // pool free-list link (valid only while recycled)

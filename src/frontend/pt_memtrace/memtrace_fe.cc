@@ -213,6 +213,8 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
   assert(insi->static_info != nullptr);
   memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
   next_onpath_pi->st = *insi->static_info;
+  if (!insi->static_info->is_trace_patch)
+    next_onpath_pi->decoded = const_cast<DecodedInst*>(insi->decoded);  // static_info is its inst
   fill_in_dynamic_info(proc_id, next_onpath_pi, insi);
 
   if (PC_PROFILE) {

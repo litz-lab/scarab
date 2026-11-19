@@ -156,8 +156,8 @@ static void set_info_num_ld_or_st(const ADDRINT iaddr, ctype_pin_inst* info) {
   // set info->num_ld/st to the total number of mem ops (both mask on and off)
   // However, when we actually generate the compressed op, we're going to set
   // the num_ld/st of the compressed op to just the number of masked mem ops
-  assert(info->is_simd);
-  assert(info->is_gather_scatter);
+  assert(info->st.is_simd);
+  assert(info->st.is_gather_scatter);
 
   uint32_t total_mask_on_and_off_mem_ops =
     scatter_info_storage[iaddr].get_num_mem_ops();
@@ -165,14 +165,14 @@ static void set_info_num_ld_or_st(const ADDRINT iaddr, ctype_pin_inst* info) {
     case gather_scatter_info::GATHER:
       // should be set to 1 in decoder.cc:add_dependency_info, because PIN
       // treats gathers as having 1 memory operand
-      assert(1 == info->num_ld);
-      info->num_ld = total_mask_on_and_off_mem_ops;
+      assert(1 == info->st.num_ld);
+      info->st.num_ld = total_mask_on_and_off_mem_ops;
       break;
     case gather_scatter_info::SCATTER:
       // should be set to 1 in decoder.cc:add_dependency_info, because PIN
       // treats scatters as having 1 memory operand
-      assert(1 == info->num_st);
-      info->num_st = total_mask_on_and_off_mem_ops;
+      assert(1 == info->st.num_st);
+      info->st.num_st = total_mask_on_and_off_mem_ops;
       break;
     default:
       assert(false);
@@ -181,22 +181,21 @@ static void set_info_num_ld_or_st(const ADDRINT iaddr, ctype_pin_inst* info) {
 }
 
 void finalize_scatter_info(const ADDRINT iaddr, ctype_pin_inst* info) {
-  assert(info->is_simd);
-  assert(info->is_gather_scatter);
+  assert(info->st.is_simd);
+  assert(info->st.is_gather_scatter);
 
   switch(scatter_info_storage[iaddr].get_type()) {
     case gather_scatter_info::GATHER:
-      scatter_info_storage[iaddr].set_data_lane_width_bytes(info->ld_size);
+      scatter_info_storage[iaddr].set_data_lane_width_bytes(info->st.ld_size);
       break;
     case gather_scatter_info::SCATTER:
-      scatter_info_storage[iaddr].set_data_lane_width_bytes(info->st_size);
+      scatter_info_storage[iaddr].set_data_lane_width_bytes(info->st.st_size);
       break;
     default:
       assert(false);
       break;
   }
-  scatter_info_storage[iaddr].set_index_lane_width_bytes(
-    info->lane_width_bytes);
+  scatter_info_storage[iaddr].set_index_lane_width_bytes(info->st.lane_width_bytes);
   scatter_info_storage[iaddr].compute_num_mem_ops();
   scatter_info_storage[iaddr].verify_fields_for_mem_access_info_generation();
 

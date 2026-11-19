@@ -30,6 +30,7 @@
 
 #include "globals/assert.h"
 
+#include "frontend/pt_memtrace/decode_cache.h"
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
 
 #undef ASSERT
@@ -42,7 +43,7 @@
 class TraceReaderMemtrace : public TraceReader {
  public:
   const InstInfo* getNextInstruction() override;
-  TraceReaderMemtrace(const std::string& _trace, uint32_t _bufsize);
+  TraceReaderMemtrace(const std::string& _trace, uint32_t _bufsize, uns _proc_id);
   ~TraceReaderMemtrace();
 
  private:
@@ -55,6 +56,8 @@ class TraceReaderMemtrace : public TraceReader {
   void processInst(InstInfo* _info, instr_t* predecoded_dr);
   /// When non-null and encoding_is_new, use this instead of decoding again (caller-owned).
   void processDrIsaInst(InstInfo* _info, bool has_another_mem, instr_t* predecoded);
+  bool sameEncoding(const DecodedInst* decoded) const;
+  DecodedInst* lookupDecoded(ReplayRecord* replay);
   uint32_t add_dependency_info(ctype_pin_inst* info, instr_t* drinst);
   void fill_in_basic_info(ctype_pin_inst* info, instr_t* drinst, size_t size, dynamorio::drmemtrace::trace_type_t type);
   bool typeIsMem(dynamorio::drmemtrace::trace_type_t _type);
@@ -93,10 +96,9 @@ class TraceReaderMemtrace : public TraceReader {
   /// Synthetic fetch barrier substituted for the instruction preceding a
   /// pid/tid change in a core-sharded trace.  See getNextInstruction__().
   ctype_pin_inst ctx_switch_barrier_ = {};
-  // Static info per instruction PC, decoded once. Per reader: each core's trace has its own address space.
-  std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool, ctype_pin_inst>> ctype_inst_map_ = {};
   uint64_t mt_warn_target_ = 0;
   uint64_t mt_ctx_switches_ = 0;
+  uns proc_id_;  // selects this core's decode cache
 };
 
 #endif

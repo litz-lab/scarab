@@ -101,7 +101,6 @@ Scarab's source code is organized as follows:
       + op.h
       + op_info.h
       + op_pool.h
-      + inst_info.h
       + table_info.h
 
     + Pipeline

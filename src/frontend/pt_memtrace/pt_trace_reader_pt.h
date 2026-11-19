@@ -30,6 +30,9 @@
  ***************************************************************************************/
 #ifndef __PT_TRACE_READER_PT_H__
 #define __PT_TRACE_READER_PT_H__
+#include <algorithm>
+#include <cstring>
+#include <deque>
 #include <map>
 #include <sstream>
 #include <stdlib.h>
@@ -39,7 +42,9 @@
 
 #include "general.param.h"
 
+#include "frontend/pt_memtrace/decode_cache.h"
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
+#include "pin/pin_lib/x86_decoder.h"
 
 #include "ctype_pin_inst.h"
 
@@ -50,6 +55,7 @@ struct PTInst {
   uint64_t pc;
   uint8_t size;
   uint8_t inst_bytes[16];
+  uint8_t patch;  // TracePatch
 };
 
 class TraceReaderPT : public TraceReader {
@@ -63,8 +69,10 @@ class TraceReaderPT : public TraceReader {
   std::map<uint64_t, uint64_t> *prev_to_new_bbl_address_map = nullptr;
   uint64_t num_nops_in_trace = 0, num_inserted_nops = 0;
   uint64_t num_direct_brs_in_trace = 0, num_inserted_direct_brs = 0;
+  uns proc_id_ = 0;  // selects this core's decode cache
   std::vector<std::string> parsed = {};
   ctype_pin_inst patch_inst_{};
+  std::deque<PTInst> pending_ = {};  // records read ahead by repair_split, not yet returned
 
  public:
   bool read_next_line(PTInst &inst) {
@@ -74,8 +82,100 @@ class TraceReaderPT : public TraceReader {
       inst.pc = NOPS_BB_START + num_nops_at_start++;
       inst.size = 1;
       inst.inst_bytes[0] = 0x90;
+      inst.patch = TRACE_PATCH_NONE;
       return true;
     }
+    if (!pending_.empty()) {
+      inst = pending_.front();
+      pending_.pop_front();
+    } else if (!read_trace_line(inst)) {
+      return false;
+    }
+    if (missing_0f1e_modrm(inst))
+      repair_split(inst);
+
+    if (enable_code_bloat_effect && (prev_to_new_bbl_address_map != nullptr)) {
+      uint64_t result = inst.pc;
+      auto it = prev_to_new_bbl_address_map->lower_bound(inst.pc);
+      if (it->first == inst.pc) {
+        result = it->second;
+      } else {
+        if (it == prev_to_new_bbl_address_map->begin())
+          result = inst.pc;
+        else {
+          it--;
+          result = it->second + (inst.pc - (it->first));
+        }
+      }
+      inst.pc = result;
+    }
+    return true;
+  }
+
+  // Some PT traces were recorded by a tracer that decodes opcode 0F 1E (endbr64,
+  // rdsspq, hint NOPs) as having no ModRM byte (#499). The record then stops
+  // right after "0f 1e" and the ModRM byte starts the next record, e.g.
+  //   f3 0f 1e | fa            -> endbr64
+  //   f3 48 0f 1e | c8 48 89 47 | 58  -> rdsspq rax; mov [rdi+0x58],rax
+  // All the bytes are in the trace, so the real instructions can be rebuilt.
+  bool missing_0f1e_modrm(const PTInst& inst) {
+    if (inst.size < 2 || inst.inst_bytes[inst.size - 2] != 0x0f || inst.inst_bytes[inst.size - 1] != 0x1e)
+      return false;
+    xed_decoded_inst_t ins;
+    xed_decoded_inst_zero_set_mode(&ins, &xed_state_);
+    return xed_decode(&ins, inst.inst_bytes, inst.size) == XED_ERROR_BUFFER_TOO_SHORT;
+  }
+
+  // Decode the bytes of 'inst' and the records that follow it on straight
+  // (each starting where the previous one ends) as one stream, until an
+  // instruction ends exactly where a record ends. Those records are then replaced
+  // by the decoded instructions. If they never line up within
+  // kMaxRepairRecords, nothing is changed and decodeInst NOPs the record.
+  void repair_split(PTInst& inst) {
+    static constexpr size_t kMaxRepairRecords = 4;
+    uint8_t bytes[16 * (kMaxRepairRecords + 1)];
+    size_t len = inst.size;
+    memcpy(bytes, inst.inst_bytes, inst.size);
+    for (size_t used = 0; used < kMaxRepairRecords; used++) {
+      if (pending_.size() <= used) {
+        PTInst next = {};
+        if (!read_trace_line(next))
+          return;
+        pending_.push_back(next);
+      }
+      const PTInst& next = pending_[used];
+      if (next.pc != inst.pc + len)
+        return;
+      memcpy(bytes + len, next.inst_bytes, next.size);
+      len += next.size;
+
+      std::vector<PTInst> rebuilt;
+      size_t off = 0;
+      while (off < len) {
+        xed_decoded_inst_t ins;
+        xed_decoded_inst_zero_set_mode(&ins, &xed_state_);
+        xed_error_enum_t res = xed_decode(&ins, bytes + off, (unsigned)std::min<size_t>(len - off, 15));
+        if (res != XED_ERROR_NONE)
+          break;
+        PTInst out = {};
+        out.pc = inst.pc + off;
+        out.size = (uint8_t)xed_decoded_inst_get_length(&ins);
+        memcpy(out.inst_bytes, bytes + off, out.size);
+        out.patch = TRACE_PATCH_REPAIRED;
+        rebuilt.push_back(out);
+        off += out.size;
+      }
+      if (off != len)
+        continue;  // ends mid-instruction or failed: take in one more record
+
+      pending_.erase(pending_.begin(), pending_.begin() + used + 1);
+      pending_.insert(pending_.begin(), rebuilt.begin() + 1, rebuilt.end());
+      inst = rebuilt.front();
+      return;
+    }
+  }
+
+  bool read_trace_line(PTInst& inst) {
     if (raw_file == NULL)
       return false;
     char buffer[GZ_BUFFER_SIZE];
@@ -103,58 +203,101 @@ class TraceReaderPT : public TraceReader {
       }
       inst.inst_bytes[found++] = strtoul(parsed[i].c_str(), NULL, 16);
     }
-
-    if (enable_code_bloat_effect && (prev_to_new_bbl_address_map != nullptr)) {
-      uint64_t result = inst.pc;
-      auto it = prev_to_new_bbl_address_map->lower_bound(inst.pc);
-      if (it->first == inst.pc) {
-        result = it->second;
-      } else {
-        if (it == prev_to_new_bbl_address_map->begin())
-          result = inst.pc;
-        else {
-          it--;
-          result = it->second + (inst.pc - (it->first));
-        }
-      }
-      inst.pc = result;
-    }
+    inst.patch = TRACE_PATCH_NONE;
     return true;
+  }
+
+  // Decode a record once: the static instruction plus the XED facts this reader and pt_fe use.
+  DecodedInst* decodeInst(const PTInst& line) {
+    xed_decoded_inst_t xed;
+    xed_decoded_inst_zero_set_mode(&xed, &xed_state_);
+    DecodedInst d = {};
+    xed_error_enum_t res = xed_decode(&xed, line.inst_bytes, line.size);
+    if (res != XED_ERROR_NONE) {
+      // Some PT traces hold records whose bytes are not valid x86-64 (#499); the next record
+      // still starts right after them, so a NOP of the same length keeps the PC stream and
+      // instruction count unchanged.
+      if (num_decode_nops_ < 10) {
+        printf("Undecodable trace record at 0x%lx (%u bytes, XED %s), replaced with a same-length NOP%s\n", line.pc,
+               line.size, xed_error_enum_t2str(res), num_decode_nops_ == 9 ? "; suppressing further messages" : "");
+      }
+      num_decode_nops_++;
+      xed = *makeNop(line.size);
+      d.trace_patch = TRACE_PATCH_NOP;
+    }
+    if (line.patch == TRACE_PATCH_REPAIRED)
+      d.trace_patch = TRACE_PATCH_REPAIRED;
+
+    xed_category_enum_t category = XED_INS_Category(&xed);
+    // Memory records the trace delivers with this instruction ('lea' and NOPs touch no memory)
+    uint32_t n_mem_ops = xed_decoded_inst_number_of_memory_operands(&xed);
+    assert(n_mem_ops <= 8);
+    d.num_mem_operands = n_mem_ops;
+    for (uint32_t i = 0; i < n_mem_ops; i++) {
+      if (xed_decoded_inst_mem_read(&xed, i))
+        d.mem_read_mask |= 1 << i;
+      if (xed_decoded_inst_mem_written(&xed, i))
+        d.mem_written_mask |= 1 << i;
+    }
+    if (category != XED_CATEGORY_NOP && category != XED_CATEGORY_WIDENOP) {
+      d.num_mem_ops = __builtin_popcount(d.mem_read_mask) + __builtin_popcount(d.mem_written_mask);
+      if (d.num_mem_ops > 2)
+        printf("Unexpected %d memory operands for 0x%lx\n", d.num_mem_ops, line.pc);
+    }
+    d.is_rep = XED_INS_IsRep(&xed) > 0;
+    d.is_nop_category = category == XED_CATEGORY_NOP;
+    d.is_syscall_category = category == XED_CATEGORY_SYSCALL;
+    d.is_taken_category = category == XED_CATEGORY_UNCOND_BR || category == XED_CATEGORY_COND_BR ||
+                          category == XED_CATEGORY_CALL || category == XED_CATEGORY_RET;
+    d.changes_cf = XED_INS_ChangeControlFlow(&xed);
+    d.is_direct_br = XED_INS_IsDirectBranchOrCall(&xed);
+    d.direct_target = d.is_direct_br ? XED_INS_DirectBranchOrCallTargetAddress(line.pc, &xed) : 0;
+    // the branch of fill_in_cf_info that sets branch_target
+    d.cf_sets_target = !(XED_INS_IsSyscall(&xed) || XED_INS_IsSysret(&xed) || XED_INS_IsInterrupt(&xed)) &&
+                       !XED_INS_IsRet(&xed) && !XED_INS_IsIndirectBranchOrCall(&xed) && d.is_direct_br;
+    xed_iclass_enum_t iclass = xed_decoded_inst_get_iclass(&xed);
+    d.is_ret = iclass == XED_ICLASS_RET_FAR || iclass == XED_ICLASS_RET_NEAR;
+    d.is_roi_marker = XED_INS_Opcode(&xed) == XED_ICLASS_XCHG && XED_INS_OperandReg(&xed, 0) == XED_REG_RCX &&
+                      XED_INS_OperandReg(&xed, 1) == XED_REG_RCX;
+
+    ctype_pin_inst cinst;
+    init_ctype_pin_inst(&cinst);
+    cinst.st.instruction_addr = line.pc;
+    fill_in_basic_info(&cinst, &xed);
+    uint32_t max_op_width = add_dependency_info(&cinst, &xed);
+    fill_in_simd_info(&cinst, &xed, max_op_width);
+    apply_x87_bug_workaround(&cinst, &xed);
+    fill_in_cf_info(&cinst, &xed);
+    print_err_if_invalid(&cinst, &xed);
+    d.inst = cinst.st;
+    return decode_cache_insert(proc_id_, line.pc, d);
   }
 
   // ret true when insn is a syscall (and thus should be skipped)
   bool processInst(PTInst &next_line) {
-    auto xed_map_iter = xed_map_.find(next_line.pc);
-    if (xed_map_iter == xed_map_.end()) {
-      fillCache(next_line.pc, next_line.size, next_line.inst_bytes);
-      xed_map_iter = xed_map_.find(next_line.pc);
-      assert((xed_map_iter != xed_map_.end()));
-    }
-    bool unknown_type, cond_branch;
-    int mem_ops_;
-    xed_decoded_inst_t *xed_ins;
-    auto &xed_tuple = (*xed_map_iter).second;
-    tie(mem_ops_, unknown_type, cond_branch, std::ignore, std::ignore) = xed_tuple;
-    xed_ins = std::get<MAP_XED>(xed_tuple).get();
+    const DecodedInst* decoded = decode_cache_find(proc_id_, next_line.pc);
+    if (decoded == nullptr)
+      decoded = decodeInst(next_line);
     InstInfo &_info = (use_info_a ? inst_info_a : inst_info_b);
     InstInfo &_prior = (use_info_a ? inst_info_b : inst_info_a);
     bool inserted_nop = false;
     if (_prior.valid && !_prior.fake_inst) {
       auto &ins = _prior;
-      if (ins.ins) {
-        if (XED_INS_Category(ins.ins) == XED_CATEGORY_NOP) {
+      const DecodedInst* pd = ins.decoded;
+      if (pd) {
+        if (pd->is_nop_category) {
           ++num_nops_in_trace;
-        } else if (XED_INS_IsDirectBranchOrCall(ins.ins)) {
+        } else if (pd->is_direct_br) {
           ++num_direct_brs_in_trace;
         }
       }
 
-      bool orig_is_rep = ins.ins && XED_INS_IsRep(ins.ins);
-      bool orig_changes_cf = ins.ins && XED_INS_ChangeControlFlow(ins.ins);
-      bool orig_is_direct_br = ins.ins && XED_INS_IsDirectBranchOrCall(ins.ins);
-      uint64_t orig_direct_target = orig_is_direct_br ? XED_INS_DirectBranchOrCallTargetAddress(ins.pc, ins.ins) : 0;
-      uint8_t orig_size = ins.ins ? (uint8_t)XED_INS_Size(ins.ins) : 0;
-      auto orig_category = ins.ins ? XED_INS_Category(ins.ins) : 0;
+      bool orig_is_rep = pd && pd->is_rep;
+      bool orig_changes_cf = pd && pd->changes_cf;
+      bool orig_is_direct_br = pd && pd->is_direct_br;
+      uint64_t orig_direct_target = orig_is_direct_br ? pd->direct_target : 0;
+      uint8_t orig_size = pd ? pd->inst.size : 0;
+      bool orig_is_syscall = pd && pd->is_syscall_category;
 
       if (orig_is_rep) {
         patch_inst_ = create_dummy_nop(_prior.pc, WPNM_FAKE_NOP, orig_size);
@@ -170,9 +313,9 @@ class TraceReaderPT : public TraceReader {
       bool changes_cf = inserted_nop ? false : orig_changes_cf;
       bool incorrect_branch = !inserted_nop && orig_is_direct_br && next_line.pc != orig_direct_target &&
                               next_line.pc != (ins.pc + orig_size);
-      uint8_t prior_size = inserted_nop ? patch_inst_.size : orig_size;
+      uint8_t prior_size = inserted_nop ? patch_inst_.st.size : orig_size;
 
-      if (_prior.valid && (!changes_cf || orig_category == XC(SYSCALL) || incorrect_branch) &&
+      if (_prior.valid && (!changes_cf || orig_is_syscall || incorrect_branch) &&
           next_line.pc != _prior.pc + prior_size) {
         patch_inst_ = create_dummy_jump(_prior.pc, next_line.pc, XED_ICLASS_JMP);
         _prior.info = &patch_inst_;
@@ -194,43 +337,43 @@ class TraceReaderPT : public TraceReader {
     if (inserted_nop)
       ++num_inserted_nops;
     _info.pc = next_line.pc;
-    _info.ins = xed_ins;
+    _info.decoded = decoded;
     _info.fake_inst = false;
     _info.pid = 1;
     _info.tid = 1;
     _info.target = 0;
     _info.static_target = 0;
     _prior.target = _info.pc;
-    xed_category_enum_t category = xed_decoded_inst_get_category(xed_ins);
-    _info.taken = category == XED_CATEGORY_UNCOND_BR || category == XED_CATEGORY_COND_BR ||
-                  category == XED_CATEGORY_CALL || category == XED_CATEGORY_RET;
+    _info.taken = decoded->is_taken_category;
     _info.mem_addr[0] = 0x4040;
     _info.mem_addr[1] = 0x8080;
     _info.mem_used[0] = false;
     _info.mem_used[1] = false;
-    _info.unknown_type = unknown_type;
+    _info.unknown_type = decoded->unknown_type;
+    _info.trace_patch = decoded->trace_patch;
     _info.valid = true;
 
-    for (int i = 0; i < mem_ops_; i++) {
+    for (int i = 0; i < decoded->num_mem_ops; i++) {
       if (i >= 2)
         break;
       _info.mem_used[i] = true;
     }
     if (_prior.valid) {
       if (_prior.fake_inst)
-        _prior.taken = _info.pc != (_prior.pc + _prior.info->size);
+        _prior.taken = _info.pc != (_prior.pc + _prior.info->st.size);
       else
-        _prior.taken = _info.pc != (_prior.pc + XED_INS_Size(_prior.ins));
+        _prior.taken = _info.pc != (_prior.pc + _prior.decoded->inst.size);
     }
     return false;
   }
-  TraceReaderPT(const std::string &_trace, bool _enable_code_bloat_effect = false,
-                std::map<uint64_t, uint64_t> *_prev_to_new_bbl_address_map = nullptr) {
+  TraceReaderPT(const std::string& _trace, uns _proc_id, bool _enable_code_bloat_effect = false,
+                std::map<uint64_t, uint64_t>* _prev_to_new_bbl_address_map = nullptr) {
     raw_file = gzopen(_trace.c_str(), "rb");
     if (!raw_file) {
       panic("TraceReaderPT: Invalid GZ File");
       throw "Could not open file";
     }
+    proc_id_ = _proc_id;
     enable_code_bloat_effect = _enable_code_bloat_effect;
     prev_to_new_bbl_address_map = _prev_to_new_bbl_address_map;
     has_trace_encodings_ = true;

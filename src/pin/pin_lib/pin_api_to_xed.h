@@ -41,11 +41,22 @@ extern "C" {
 
 enum class CustomOp : uint8_t { NONE, PREFETCH_CODE };
 
+// How the PT reader changed a trace record before decoding it (see
+// pt_trace_reader_pt.h). Counted per fetched instruction by pt_trace_read.
+enum TracePatch : uint8_t {
+  TRACE_PATCH_NONE = 0,
+  TRACE_PATCH_REPAIRED,  // rebuilt from records the tracer split mid-instruction
+  TRACE_PATCH_NOP,       // undecodable record replaced with a same-length NOP
+};
+
+struct DecodedInst;  // frontend/pt_memtrace/decode_cache.h
+
 struct InstInfo {
   uint64_t pc = 0;  // instruction address
   union {
-    const xed_decoded_inst_t* ins = nullptr;  // XED info
+    const DecodedInst* decoded = nullptr;  // PT: decode-cache entry
     const ctype_pin_inst* info;
+    const ctype_pin_inst_static* static_info;  // memtrace: decode-cache entry or a reader patch
   };
 
   uint64_t pid = 0;     // process ID
@@ -63,6 +74,7 @@ struct InstInfo {
   bool valid = false;                   // True until the end of the sequence
   bool is_dr_ins = false;               // True if the ins is of type DR_ISA_REGDEPS
   bool fake_inst = false;               // True when `info` union member is a pre-built fake ctype_pin_inst
+  uint8_t trace_patch = TRACE_PATCH_NONE;  // PT only: see TracePatch
 
   // used by MEMTRACE frontend to flag the last inst from the trace
   bool last_inst_from_trace = false;

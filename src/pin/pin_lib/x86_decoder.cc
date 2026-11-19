@@ -42,23 +42,18 @@ typedef enum Reg_Id_struct {
 
 struct Reg_Array_Info {
   size_t  array_offset;
-  uint8_t ctype_pin_inst::*num;
+  uint8_t ctype_pin_inst_static::* num;
   uint8_t                  max_num;
 };
 
 /**************************** Global Variables ********************************/
 // helper array used by add_reg()
 static Reg_Array_Info reg_array_infos[NUM_REG_ARRAYS] = {
-  {offsetof(ctype_pin_inst, src_regs), &ctype_pin_inst::num_src_regs,
-   MAX_SRC_REGS_NUM},
-  {offsetof(ctype_pin_inst, dst_regs), &ctype_pin_inst::num_dst_regs,
-   MAX_DST_REGS_NUM},
-  {offsetof(ctype_pin_inst, ld1_addr_regs), &ctype_pin_inst::num_ld1_addr_regs,
-   MAX_MEM_ADDR_REGS_NUM},
-  {offsetof(ctype_pin_inst, ld2_addr_regs), &ctype_pin_inst::num_ld2_addr_regs,
-   MAX_MEM_ADDR_REGS_NUM},
-  {offsetof(ctype_pin_inst, st_addr_regs), &ctype_pin_inst::num_st_addr_regs,
-   MAX_MEM_ADDR_REGS_NUM},
+    {offsetof(ctype_pin_inst_static, src_regs), &ctype_pin_inst_static::num_src_regs, MAX_SRC_REGS_NUM},
+    {offsetof(ctype_pin_inst_static, dst_regs), &ctype_pin_inst_static::num_dst_regs, MAX_DST_REGS_NUM},
+    {offsetof(ctype_pin_inst_static, ld1_addr_regs), &ctype_pin_inst_static::num_ld1_addr_regs, MAX_MEM_ADDR_REGS_NUM},
+    {offsetof(ctype_pin_inst_static, ld2_addr_regs), &ctype_pin_inst_static::num_ld2_addr_regs, MAX_MEM_ADDR_REGS_NUM},
+    {offsetof(ctype_pin_inst_static, st_addr_regs), &ctype_pin_inst_static::num_st_addr_regs, MAX_MEM_ADDR_REGS_NUM},
 };
 
 // maps for translation from pin to scarab
@@ -103,17 +98,17 @@ int dump_marker_type(const xed_decoded_inst_t* ins) {
 
 void fill_in_basic_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   int category = XED_INS_Category(ins);
-  info->size   = XED_INS_Size(ins);
+  info->st.size = XED_INS_Size(ins);
 
-  info->true_op_type = XED_INS_Opcode(ins);
-  info->op_type      = iclass_to_scarab_map[XED_INS_Opcode(ins)].opcode;
-  assert(XED_INS_Mnemonic(ins).size() < sizeof(info->pin_iclass));
-  strcpy(info->pin_iclass, XED_INS_Mnemonic(ins).c_str());
+  info->st.true_op_type = XED_INS_Opcode(ins);
+  info->st.op_type = iclass_to_scarab_map[XED_INS_Opcode(ins)].opcode;
+  assert(XED_INS_Mnemonic(ins).size() < sizeof(info->st.pin_iclass));
+  strcpy(info->st.pin_iclass, XED_INS_Mnemonic(ins).c_str());
 
   // DIAG: report each distinct unmapped iclass once (the memtrace XED path does
   // not call print_err_if_invalid, so unmapped ops otherwise surface only as a
   // hard OP_INV assert in uop_generator with no mnemonic).
-  if (info->op_type == OP_INV) {
+  if (info->st.op_type == OP_INV) {
     static std::set<int> reported_inv_iclass;
     int iclass = XED_INS_Opcode(ins);
     if (reported_inv_iclass.insert(iclass).second) {
@@ -125,50 +120,47 @@ void fill_in_basic_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
     // by default (no effect on real runs); set SCARAB_INV_AS_NOP=1 only when
     // scanning a new trace for instructions to add to iclass_to_scarab_map.
     if (getenv("SCARAB_INV_AS_NOP"))
-      info->op_type = OP_NOP;
+      info->st.op_type = OP_NOP;
   }
 
   if((category == XED_CATEGORY_SSE) || (category == XED_CATEGORY_FCMOV) ||
      (category == XED_CATEGORY_X87_ALU)) {
-    info->is_fp = 1;
+    info->st.is_fp = 1;
   }
-  info->is_string         = (category == XED_CATEGORY_STRINGOP);
-  info->is_call           = (category == XED_CATEGORY_CALL);
-  info->is_move           = (category == XED_CATEGORY_DATAXFER ||
-                   info->op_type == OP_MOV);
-  info->is_prefetch       = (category == XED_CATEGORY_PREFETCH);
-  info->has_push          = (category == XED_CATEGORY_PUSH ||
-                    category == XED_CATEGORY_CALL);
-  info->has_pop           = (category == XED_CATEGORY_POP ||
-                   category == XED_CATEGORY_RET);
-  info->is_lock           = XED_INS_LockPrefix(ins);
-  info->is_repeat         = XED_INS_HasRealRep(ins);
-  info->is_gather_scatter = XED_INS_IsVgather(ins) || XED_INS_IsVscatter(ins);
+  info->st.is_string = (category == XED_CATEGORY_STRINGOP);
+  info->st.is_call = (category == XED_CATEGORY_CALL);
+  info->st.is_move = (category == XED_CATEGORY_DATAXFER || info->st.op_type == OP_MOV);
+  info->st.is_prefetch = (category == XED_CATEGORY_PREFETCH);
+  info->st.has_push = (category == XED_CATEGORY_PUSH || category == XED_CATEGORY_CALL);
+  info->st.has_pop = (category == XED_CATEGORY_POP || category == XED_CATEGORY_RET);
+  info->st.is_lock = XED_INS_LockPrefix(ins);
+  info->st.is_repeat = XED_INS_HasRealRep(ins);
+  info->st.is_gather_scatter = XED_INS_IsVgather(ins) || XED_INS_IsVscatter(ins);
 
-  for (int ii = 0; (ii < 8) && (ii < info->size); ii++) {
-    info->inst_binary_lsb = (info->inst_binary_lsb << 8) + XED_INS_Byte(ins, ii);
+  for (int ii = 0; (ii < 8) && (ii < info->st.size); ii++) {
+    info->st.inst_binary_lsb = (info->st.inst_binary_lsb << 8) + XED_INS_Byte(ins, ii);
   }
-  for (int ii = 0; (ii < 16) && (ii < info->size); ii++) {
-    info->inst_binary_msb = (info->inst_binary_msb << 8) + XED_INS_Byte(ins, ii);
+  for (int ii = 0; (ii < 16) && (ii < info->st.size); ii++) {
+    info->st.inst_binary_msb = (info->st.inst_binary_msb << 8) + XED_INS_Byte(ins, ii);
   }
 
   if (dump_marker_type(ins) == 1) {
-    info->scarab_marker_roi_begin = true;
-    info->scarab_marker_roi_end = false;
+    info->st.scarab_marker_roi_begin = true;
+    info->st.scarab_marker_roi_end = false;
   } else if (dump_marker_type(ins) == 2) {
-    info->scarab_marker_roi_end = true;
-    info->scarab_marker_roi_begin = false;
+    info->st.scarab_marker_roi_end = true;
+    info->st.scarab_marker_roi_begin = false;
   }
 }
 
 uint32_t add_dependency_info(ctype_pin_inst*           info,
                              const xed_decoded_inst_t* ins) {
   uint32_t      max_op_width = 0;
-  const ADDRINT iaddr        = info->instruction_addr;
+  const ADDRINT iaddr = info->st.instruction_addr;
   bool is_gather_or_scatter = XED_INS_IsVgather(ins) || XED_INS_IsVscatter(ins);
-  info->ld_size             = 0;
-  info->st_size             = 0;
-  if(info->op_type != OP_NOP) {
+  info->st.ld_size = 0;
+  info->st.st_size = 0;
+  if (info->st.op_type != OP_NOP) {
     // Iterate over reg operands separately
     for(uint32_t ii = 0; ii < XED_INS_OperandCount(ins); ii++) {
       if(XED_INS_OperandIsReg(ins, ii)) {
@@ -183,7 +175,7 @@ uint32_t add_dependency_info(ctype_pin_inst*           info,
           add_reg(info, DST_REGS, scarab_reg);
         }
         if(scarab_reg >= SCARAB_REG_FP0 && scarab_reg <= SCARAB_REG_FP7)
-          info->is_fp = TRUE;
+          info->st.is_fp = TRUE;
         if(scarab_reg != SCARAB_REG_ZPS) {
           max_op_width = std::max(max_op_width, XED_INS_OperandWidth(ins, ii));
         }
@@ -192,9 +184,9 @@ uint32_t add_dependency_info(ctype_pin_inst*           info,
                                               operandWritten);
         }
       }
-      info->has_immediate |= XED_INS_OperandIsImmediate(ins, ii);
+      info->st.has_immediate |= XED_INS_OperandIsImmediate(ins, ii);
       if(is_gather_or_scatter) {
-        assert(!(info->has_immediate));
+        assert(!(info->st.has_immediate));
       }
     }
     // Memory Operands (iterate of Memory operands)
@@ -223,35 +215,29 @@ uint32_t add_dependency_info(ctype_pin_inst*           info,
             XED_INS_OperandWrittenOnly(ins, ii));
         }
         if(XED_INS_MemoryOperandIsRead(ins, ii)) {
-          assert(info->num_ld < MAX_LD_NUM);
-          add_reg(info, (Reg_Array_Id)(LD1_ADDR_REGS + info->num_ld),
-                  scarab_base_reg);
-          add_reg(info, (Reg_Array_Id)(LD1_ADDR_REGS + info->num_ld),
-                  scarab_index_reg);
-          info->num_ld++;
+          assert(info->st.num_ld < MAX_LD_NUM);
+          add_reg(info, (Reg_Array_Id)(LD1_ADDR_REGS + info->st.num_ld), scarab_base_reg);
+          add_reg(info, (Reg_Array_Id)(LD1_ADDR_REGS + info->st.num_ld), scarab_index_reg);
+          info->st.num_ld++;
           // if the instruction has multiple mem accesses check if they have the
           // same size
-          assert(info->ld_size == 0 ||
-                 info->ld_size == XED_INS_MemoryReadSize(ins, ii));
-          info->ld_size = XED_INS_MemoryReadSize(ins, ii);
+          assert(info->st.ld_size == 0 || info->st.ld_size == XED_INS_MemoryReadSize(ins, ii));
+          info->st.ld_size = XED_INS_MemoryReadSize(ins, ii);
         }
         if(XED_INS_MemoryOperandIsWritten(ins, ii)) {
-          assert(info->num_st < MAX_ST_NUM);
-          add_reg(info, (Reg_Array_Id)(ST_ADDR_REGS + info->num_st),
-                  scarab_base_reg);
-          add_reg(info, (Reg_Array_Id)(ST_ADDR_REGS + info->num_st),
-                  scarab_index_reg);
-          info->num_st++;
+          assert(info->st.num_st < MAX_ST_NUM);
+          add_reg(info, (Reg_Array_Id)(ST_ADDR_REGS + info->st.num_st), scarab_base_reg);
+          add_reg(info, (Reg_Array_Id)(ST_ADDR_REGS + info->st.num_st), scarab_index_reg);
+          info->st.num_st++;
           // if the instruction has multiple mem accesses check if they have the
           // same size
-          assert(info->st_size == 0 ||
-                 info->st_size == XED_INS_MemoryWriteSize(ins, ii));
-          info->st_size = XED_INS_MemoryWriteSize(ins, ii);
+          assert(info->st.st_size == 0 || info->st.st_size == XED_INS_MemoryWriteSize(ins, ii));
+          info->st.st_size = XED_INS_MemoryWriteSize(ins, ii);
         }
       }
-      info->has_immediate |= XED_INS_OperandIsImmediate(ins, ii);
+      info->st.has_immediate |= XED_INS_OperandIsImmediate(ins, ii);
       if(is_gather_or_scatter) {
-        assert(!(info->has_immediate));
+        assert(!(info->st.has_immediate));
       }
     }
   }
@@ -261,35 +247,33 @@ uint32_t add_dependency_info(ctype_pin_inst*           info,
 void fill_in_simd_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins,
                        uint32_t max_op_width) {
   struct iclass_to_scarab iclass_info = iclass_to_scarab_map[XED_INS_Opcode(ins)];
-  if(info->op_type != OP_INV) {
+  if (info->st.op_type != OP_INV) {
     assert(max_op_width % 8 == 0);
     int lane_width_bytes = iclass_info.lane_width_bytes;
     int num_simd_lanes   = iclass_info.num_simd_lanes;
     if(lane_width_bytes == -1) {
-      info->lane_width_bytes = max_op_width / 8;
-      info->num_simd_lanes   = 1;
+      info->st.lane_width_bytes = max_op_width / 8;
+      info->st.num_simd_lanes = 1;
     } else if(num_simd_lanes == -1) {
-      info->lane_width_bytes = lane_width_bytes;
+      info->st.lane_width_bytes = lane_width_bytes;
       assert((max_op_width / 8) % lane_width_bytes == 0);
-      info->num_simd_lanes = max_op_width / 8 / lane_width_bytes;
+      info->st.num_simd_lanes = max_op_width / 8 / lane_width_bytes;
     } else {
-      info->lane_width_bytes = lane_width_bytes;
-      info->num_simd_lanes   = num_simd_lanes;
+      info->st.lane_width_bytes = lane_width_bytes;
+      info->st.num_simd_lanes = num_simd_lanes;
     }
   }
 
-  info->is_simd = 0;
-  for(int i = 0; i < info->num_src_regs; ++i) {
-    if(info->src_regs[i] >= SCARAB_REG_ZMM0 &&
-       info->src_regs[i] <= SCARAB_REG_ZMM31) {
-      info->is_simd = 1;
+  info->st.is_simd = 0;
+  for (int i = 0; i < info->st.num_src_regs; ++i) {
+    if (info->st.src_regs[i] >= SCARAB_REG_ZMM0 && info->st.src_regs[i] <= SCARAB_REG_ZMM31) {
+      info->st.is_simd = 1;
       return;
     }
   }
-  for(int i = 0; i < info->num_dst_regs; ++i) {
-    if(info->dst_regs[i] >= SCARAB_REG_ZMM0 &&
-       info->dst_regs[i] <= SCARAB_REG_ZMM31) {
-      info->is_simd = 1;
+  for (int i = 0; i < info->st.num_dst_regs; ++i) {
+    if (info->st.dst_regs[i] >= SCARAB_REG_ZMM0 && info->st.dst_regs[i] <= SCARAB_REG_ZMM31) {
+      info->st.is_simd = 1;
       return;
     }
   }
@@ -299,65 +283,65 @@ void apply_x87_bug_workaround(ctype_pin_inst*           info,
                               const xed_decoded_inst_t* ins) {
   // Workaround for a bug in Pin 2.8, see
   // http://tech.groups.yahoo.com/group/pinheads/message/6082
-  if(pops_x87_stack(XED_INS_Opcode(ins)) && info->num_dst_regs == 1 &&
-     info->dst_regs[0] == SCARAB_REG_FP0) {
+  if (pops_x87_stack(XED_INS_Opcode(ins)) && info->st.num_dst_regs == 1 && info->st.dst_regs[0] == SCARAB_REG_FP0) {
     int other_reg = SCARAB_REG_FP0;
-    for(int i = 0; i < info->num_src_regs; ++i) {
-      if(info->src_regs[i] != SCARAB_REG_FP0) {
+    for (int i = 0; i < info->st.num_src_regs; ++i) {
+      if (info->st.src_regs[i] != SCARAB_REG_FP0) {
         assert(other_reg == SCARAB_REG_FP0);
-        other_reg = info->src_regs[i];
+        other_reg = info->st.src_regs[i];
       }
     }
     // not checking for other_reg != SCARAB_REG_FP0 because sometimes the
     // compiler may use FSTP ST0 or smth to simply pop the x87 stack
-    info->dst_regs[0] = other_reg;
+    info->st.dst_regs[0] = other_reg;
   }
 }
 
 void fill_in_cf_info(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
   int category  = XED_INS_Category(ins);
-  info->cf_type = NOT_CF;
-
+  info->st.cf_type = NOT_CF;
 
   if(XED_INS_IsSyscall(ins) || XED_INS_IsSysret(ins) ||
      XED_INS_IsInterrupt(ins)) {
-    info->cf_type = CF_SYS;
+    info->st.cf_type = CF_SYS;
   } else if(XED_INS_IsRet(ins)) {
-    info->cf_type = CF_RET;
+    info->st.cf_type = CF_RET;
   } else if(XED_INS_IsIndirectBranchOrCall(ins)) {
     // indirect
     if(category == XED_CATEGORY_UNCOND_BR)
-      info->cf_type = CF_IBR;
+      info->st.cf_type = CF_IBR;
     else if(category == XED_CATEGORY_COND_BR)
-      info->cf_type = CF_ICO;  // ICBR not supported by Scarab, so map it to ICO
+      info->st.cf_type = CF_ICO;  // ICBR not supported by Scarab, so map it to ICO
     else if(category == XED_CATEGORY_CALL)
-      info->cf_type = CF_ICALL;
+      info->st.cf_type = CF_ICALL;
   } else if(XED_INS_IsDirectBranchOrCall(ins)) {
     // direct
     if(category == XED_CATEGORY_UNCOND_BR)
-      info->cf_type = CF_BR;
+      info->st.cf_type = CF_BR;
     else if(category == XED_CATEGORY_COND_BR)
-      info->cf_type = CF_CBR;
+      info->st.cf_type = CF_CBR;
     else if(category == XED_CATEGORY_CALL)
-      info->cf_type = CF_CALL;
-    info->branch_target = XED_INS_DirectBranchOrCallTargetAddress(info->instruction_addr, ins);
+      info->st.cf_type = CF_CALL;
+    info->st.branch_target = XED_INS_DirectBranchOrCallTargetAddress(info->st.instruction_addr, ins);
   }
-  info->is_ifetch_barrier = is_ifetch_barrier(ins);
+  info->st.is_ifetch_barrier = is_ifetch_barrier(ins);
 }
 
 void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
-  bool invalid = info->op_type == OP_INV;
+  bool invalid = info->st.op_type == OP_INV;
   bool correct = true;
 #ifdef ENABLE_PT_MEMTRACE
   if (FRONTEND == FE_MEMTRACE) {
-    correct = info->cf_type != NOT_CF || XED_INS_DirectBranchOrCallTargetAddress(info->instruction_addr, ins) == info->branch_target;
-    if (info->is_repeat) correct = true;  // Ignore rep instr since the target is the same instr.
+    correct = info->st.cf_type != NOT_CF ||
+              XED_INS_DirectBranchOrCallTargetAddress(info->st.instruction_addr, ins) == info->st.branch_target;
+    if (info->st.is_repeat)
+      correct = true;  // Ignore rep instr since the target is the same instr.
     if (info->last_inst_from_trace) {
       // if last intruction is direct, branch target is overwritten, but npc shall be itself
       // if it is indirect or NOT_CF, branch target shall equal npc, and is itself
-      assert(info->instruction_next_addr == info->instruction_addr);
+      assert(info->instruction_next_addr == info->st.instruction_addr);
       if (!correct) {
-        assert(info->cf_type == NOT_CF);
+        assert(info->st.cf_type == NOT_CF);
         // ignore incorrect npc for the last instruction from the trace
         correct = true;
       }
@@ -369,28 +353,25 @@ void print_err_if_invalid(ctype_pin_inst* info, const xed_decoded_inst_t* ins) {
       std::cout << "Invalid inst! " << std::endl;
     }
     if(!correct) {
-      std::cout << "Not correct inst: " << +info->cf_type << ", " << std::hex << info->instruction_addr << ' '
-                << std::dec << +info->size << ' ' << xed_decoded_inst_get_branch_displacement(ins) << ' ' << std::hex
-                << info->branch_target << ' ' << std::endl;
+      std::cout << "Not correct inst: " << +info->st.cf_type << ", " << std::hex << info->st.instruction_addr << ' '
+                << std::dec << +info->st.size << ' ' << xed_decoded_inst_get_branch_displacement(ins) << ' ' << std::hex
+                << info->st.branch_target << ' ' << std::endl;
       ;
     }
-    std::cout
-      << "Unmapped instruction at "
-      << "EIP: " << std::hex << info->instruction_addr
-      << ", opcode: " << XED_INS_Mnemonic(ins) << ", category: "
-      << std::string(xed_category_enum_t2str(XED_INS_Category(ins))) << std::dec
-      << ", opcode index: " << XED_INS_Opcode(ins)
-      << ", hasrealrep: " << (int)info->is_repeat
-      << ", is_lock: " << (int)info->is_lock
-      << ", num_ld: " << (int)info->num_ld << ", num_st: " << (int)info->num_st
-      << ", num_src_regs: " << (int)info->num_src_regs
-      << ", num_dst_regs: " << (int)info->num_dst_regs
-      << ", num_ld1_addr_regs: " << (int)info->num_ld1_addr_regs
-      << ", num_ld2_addr_regs: " << (int)info->num_ld2_addr_regs
-      << ", num_st_addr_regs: " << (int)info->num_st_addr_regs
-      << ", num_simd_lanes: " << (int)info->num_simd_lanes
-      << ", lane_width_bytes: " << (int)info->lane_width_bytes
-      << ". Look at README in pin/pin_lib on how to map new instructions" << std::endl;;
+    std::cout << "Unmapped instruction at " << "EIP: " << std::hex << info->st.instruction_addr
+              << ", opcode: " << XED_INS_Mnemonic(ins)
+              << ", category: " << std::string(xed_category_enum_t2str(XED_INS_Category(ins))) << std::dec
+              << ", opcode index: " << XED_INS_Opcode(ins) << ", hasrealrep: " << (int)info->st.is_repeat
+              << ", is_lock: " << (int)info->st.is_lock << ", num_ld: " << (int)info->st.num_ld
+              << ", num_st: " << (int)info->st.num_st << ", num_src_regs: " << (int)info->st.num_src_regs
+              << ", num_dst_regs: " << (int)info->st.num_dst_regs
+              << ", num_ld1_addr_regs: " << (int)info->st.num_ld1_addr_regs
+              << ", num_ld2_addr_regs: " << (int)info->st.num_ld2_addr_regs
+              << ", num_st_addr_regs: " << (int)info->st.num_st_addr_regs
+              << ", num_simd_lanes: " << (int)info->st.num_simd_lanes
+              << ", lane_width_bytes: " << (int)info->st.lane_width_bytes
+              << ". Look at README in pin/pin_lib on how to map new instructions" << std::endl;
+    ;
     //dec_err_ostream->flush();
   }
 }
@@ -422,14 +403,15 @@ void add_reg(ctype_pin_inst* info, Reg_Array_Id id, uint8_t reg) {
   if(reg >= SCARAB_REG_CS && reg <= SCARAB_REG_RIP)
     return;  // ignoring EIP and segment regs
 
-  uint8_t* array = ((uint8_t*)info) + reg_array_infos[id].array_offset;
-  uint8_t ctype_pin_inst::*num_ptr = reg_array_infos[id].num;
-  //  uint8_t * num   = &(info->*num_ptr);
+  ctype_pin_inst_static* st = &info->st;
+  uint8_t* array = ((uint8_t*)st) + reg_array_infos[id].array_offset;
+  uint8_t ctype_pin_inst_static::* num_ptr = reg_array_infos[id].num;
+  //  uint8_t * num   = &(st->*num_ptr);
   uint8_t max_num = reg_array_infos[id].max_num;
   assert(id < NUM_REG_ARRAYS);
-  assert(info->*num_ptr < max_num);
-  array[info->*num_ptr] = reg;
-  (info->*num_ptr)++;
+  assert(st->*num_ptr < max_num);
+  array[st->*num_ptr] = reg;
+  (st->*num_ptr)++;
 }
 
 void init_reg_compress_map(void) {

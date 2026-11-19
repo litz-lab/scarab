@@ -135,11 +135,11 @@ void pin_decoder_insert_analysis_functions(const INS& ins) {
   xed_decoded_inst_t* xed_ins = INS_XedDec(ins);
   fill_in_basic_info(info, xed_ins);
 
-  info->instruction_addr = INS_Address(ins);
+  info->st.instruction_addr = INS_Address(ins);
   // Note: should be overwritten for a taken control flow instruction
   info->instruction_next_addr = INS_NextAddress(ins);
   if(INS_IsDirectBranchOrCall(ins)) {
-    info->branch_target = INS_DirectBranchOrCallTargetAddress(ins);
+    info->st.branch_target = INS_DirectBranchOrCallTargetAddress(ins);
   }
 
   if(INS_IsVgather(ins) || INS_IsVscatter(ins)) {
@@ -208,7 +208,7 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
     }
   }
 
-  if(info->cf_type) {
+  if (info->st.cf_type) {
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_branch_dir,
                    IARG_BRANCH_TAKEN, IARG_END);
   }
@@ -217,8 +217,8 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   // Src: IPOINT_BEFORE (values ready before exec). Dst: IPOINT_AFTER
   // (dst values only exist after exec);
   if (INS_Valid(ins)) {
-    for (uns i = 0; i < info->num_src_regs; i++) {
-      uint8_t scarab_id = info->src_regs[i];
+    for (uns i = 0; i < info->st.num_src_regs; i++) {
+      uint8_t scarab_id = info->st.src_regs[i];
       auto it = reg_scarab_to_pin_map.find(scarab_id);
       REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
       // read pin_reg's value and store it into glb_src_vector_vals
@@ -229,8 +229,8 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
 
   if (INS_Valid(ins)) {
     if (INS_IsValidForIpointAfter(ins)) {
-      for (uns i = 0; i < info->num_dst_regs; i++) {
-        uint8_t scarab_id = info->dst_regs[i];
+      for (uns i = 0; i < info->st.num_dst_regs; i++) {
+        uint8_t scarab_id = info->st.dst_regs[i];
         auto it = reg_scarab_to_pin_map.find(scarab_id);
         REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
         // read pin_reg's value and store it into glb_dst_vector_vals
@@ -250,7 +250,7 @@ void create_compressed_op_after(ADDRINT iaddr) {
   if (fast_forward_count)
     return;
 
-  fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->num_dst_regs);
+  fill_register_values(filled_inst_info, true, glb_dst_vector_vals, filled_inst_info->st.num_dst_regs);
 }
 
 // int64_t heartbeat = 0;
@@ -264,26 +264,24 @@ void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
       filled_inst_info = &tmp_inst_info;
       // translate registers (no need to translate agen, since they won't be
       // FP)
-      for(int i = 0; i < filled_inst_info->num_src_regs; ++i) {
-        filled_inst_info->src_regs[i] = absolute_reg(
-          filled_inst_info->src_regs[i], glb_opcode, false);
+      for (int i = 0; i < filled_inst_info->st.num_src_regs; ++i) {
+        filled_inst_info->st.src_regs[i] = absolute_reg(filled_inst_info->st.src_regs[i], glb_opcode, false);
       }
-      for(int i = 0; i < filled_inst_info->num_dst_regs; ++i) {
-        filled_inst_info->dst_regs[i] = absolute_reg(
-          filled_inst_info->dst_regs[i], glb_opcode, true);
+      for (int i = 0; i < filled_inst_info->st.num_dst_regs; ++i) {
+        filled_inst_info->st.dst_regs[i] = absolute_reg(filled_inst_info->st.dst_regs[i], glb_opcode, true);
       }
-      fill_register_values(filled_inst_info, false, glb_src_vector_vals, filled_inst_info->num_src_regs);
+      fill_register_values(filled_inst_info, false, glb_src_vector_vals, filled_inst_info->st.num_src_regs);
       // update x87 state
       update_x87_stack_state(glb_opcode);
     }
 
     uint num_lds = glb_ld_vaddrs.size();
     assert(num_lds <= MAX_LD_NUM);
-    if(filled_inst_info->num_ld != num_lds) {
+    if (filled_inst_info->st.num_ld != num_lds) {
       update_gather_scatter_num_ld_or_st(iaddr, gather_scatter_info::GATHER,
                                          num_lds, filled_inst_info);
     }
-    assert(filled_inst_info->num_ld == num_lds);
+    assert(filled_inst_info->st.num_ld == num_lds);
     assert(glb_ld_data.size() == glb_ld_vaddrs.size());
     for(uint ld = 0; ld < num_lds; ld++) {
       filled_inst_info->ld_vaddr[ld] = glb_ld_vaddrs[ld];
@@ -292,11 +290,11 @@ void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
 
     uint num_sts = glb_st_vaddrs.size();
     assert(num_sts <= MAX_ST_NUM);
-    if(filled_inst_info->num_st != num_sts) {
+    if (filled_inst_info->st.num_st != num_sts) {
       update_gather_scatter_num_ld_or_st(iaddr, gather_scatter_info::SCATTER,
                                          num_sts, filled_inst_info);
     }
-    assert(filled_inst_info->num_st == num_sts);
+    assert(filled_inst_info->st.num_st == num_sts);
     for(uint st = 0; st < num_sts; st++) {
       filled_inst_info->st_vaddr[st] = glb_st_vaddrs[st];
     }
@@ -424,14 +422,14 @@ void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg
     if (!is_arch_gpr(global_vals[i].id))
       continue;
     if (is_dst) {
-      ASSERTX(global_vals[i].id == inst->dst_regs[i]);
+      ASSERTX(global_vals[i].id == inst->st.dst_regs[i]);
       inst->dests[i].id = global_vals[i].id;
       inst->dests[i].val = global_vals[i].val;
       inst->dests[i].size = global_vals[i].size;
       continue;
     }
 
-    ASSERTX(global_vals[i].id == inst->src_regs[i]);
+    ASSERTX(global_vals[i].id == inst->st.src_regs[i]);
     inst->srcs[i].id = global_vals[i].id;
     inst->srcs[i].val = global_vals[i].val;
     inst->srcs[i].size = global_vals[i].size;
@@ -442,8 +440,8 @@ void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,
                                         const gather_scatter_info::type type,
                                         const uint      num_maskon_memops,
                                         ctype_pin_inst* info) {
-  ASSERTX(info->is_simd);
-  ASSERTX(info->is_gather_scatter);
+  ASSERTX(info->st.is_simd);
+  ASSERTX(info->st.is_gather_scatter);
   ASSERTX(1 == scatter_info_storage.count(iaddr));
   ASSERTX(type == scatter_info_storage[iaddr].get_type());
   // number of actual mask on loads/stores should be less or equal to total of
@@ -453,11 +451,11 @@ void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,
   switch(type) {
     case gather_scatter_info::GATHER:
       assert(num_maskon_memops <= total_mask_on_and_off_mem_ops);
-      info->num_ld = num_maskon_memops;
+      info->st.num_ld = num_maskon_memops;
       break;
     case gather_scatter_info::SCATTER:
       assert(num_maskon_memops <= total_mask_on_and_off_mem_ops);
-      info->num_st = num_maskon_memops;
+      info->st.num_st = num_maskon_memops;
       break;
     default:
       ASSERTX(false);

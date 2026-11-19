@@ -245,6 +245,27 @@ static std::optional<uint64_t> apply_replay_updates_up_to(uns proc_id, uns64 ins
   return last_reader;
 }
 
+// The trace holds no wrong-path outcomes: a conditional branch's direction and an indirect branch's
+// target (and so their next PC) are unknown (op_oracle_known).
+static void invalidate_wrong_path_oracle(Op* op) {
+  switch (op->uop->cf_type) {
+    case CF_CBR:
+    case CF_REP:
+      op->oracle_info.dir = DIR_INVALID;
+      op->oracle_info.npc = ADDR_INVALID;
+      break;
+    case CF_IBR:
+    case CF_ICALL:
+    case CF_ICO:
+    case CF_RET:
+      op->oracle_info.target = ADDR_INVALID;
+      op->oracle_info.npc = ADDR_INVALID;
+      break;
+    default:
+      break;
+  }
+}
+
 void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
   // ext_trace_redirect should be called before fetching from the secondary fetch
   bool off_path_mode_ = off_path_mode[proc_id][bp_id];
@@ -260,8 +281,10 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
     uop_generator_get_uop(proc_id, op, NULL);
   }
   // off-path ops can never be the last instruction to execute
-  if (off_path_mode_)
+  if (off_path_mode_) {
     op->exit = false;
+    invalidate_wrong_path_oracle(op);
+  }
 
   if (uop_generator_get_eom(proc_id)) {
     if (!off_path_mode_) {

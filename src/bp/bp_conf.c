@@ -479,7 +479,8 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
   _DEBUG(0, DEBUG_BP_CONF, "index:%d hist:%s output:%d conf_th:%d pred_conf:%d bp_pred:%d \n", index, hexstr64(hist),
          output, CONF_PERCEPTRON_TH, pred_conf, recover_at_decode_or_exec);
 
-  x_i = op->oracle_info.dir ? 1 : -1;
+  const Flag dir = op_dir_or_pred(op, bp_pred_info->pred);
+  x_i = dir ? 1 : -1;
 
   bp_pred_info->pred_conf_perceptron_global_hist = percep_bpc_data->conf_perceptron_global_hist;
   percep_bpc_data->conf_perceptron_global_hist >>= 1;
@@ -497,9 +498,9 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
     percep_bpc_data->conf_perceptron_global_hist |= (((uns64)x_i) << 63);
   } else {
     op->recovery_info.conf_perceptron_global_hist =
-        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)op->oracle_info.dir) << 63);
+        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)dir) << 63);
 
-    percep_bpc_data->conf_perceptron_global_hist |= (((uns64)(op->oracle_info.dir)) << 63);
+    percep_bpc_data->conf_perceptron_global_hist |= (((uns64)dir) << 63);
 
     op->recovery_info.conf_perceptron_global_misp_hist =
         (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)recover_at_decode_or_exec << 63);

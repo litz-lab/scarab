@@ -353,8 +353,10 @@ void bp_ibtb_ittage_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_ibtb_ittage_pred: returns the predicted target, 0 = no prediction */
 
 Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
-  if (PERFECT_IBP)
+  if (PERFECT_IBP) {
+    ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
     return op->oracle_info.target;
+  }
 
   const Ittage* it = bp_data->ittage;
   const Ittage_Hist* h = bp_data->ittage_hist;

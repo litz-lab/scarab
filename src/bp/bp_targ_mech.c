@@ -146,6 +146,7 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  head:%d  tail:%d  offpath:%d\n", bp_data->crs.head, bp_data->crs.tail,
               op->off_path);
     STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
+    ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
     return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
   bp_data->crs.tail = new_tail;
@@ -166,6 +167,7 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
             cf_type_names[op->uop->cf_type], op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
   mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
+  ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
   return PERFECT_CRS ? op->oracle_info.target : addr;
 }
 
@@ -250,6 +252,7 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
               op->off_path);
     STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
     STAT_EVENT(op->proc_id, CRS_UNDERFLOW_ON_PATH + op->off_path); /*CHECK EXCLUSIVE UNDERFLOW*/
+    ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
     return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
 
@@ -274,6 +277,7 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
             op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
   mispred = PERFECT_CRS ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
+  ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
   return PERFECT_CRS ? op->oracle_info.target : addr;
 }
 
@@ -598,13 +602,19 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   Addr *btb_line, btb_line_addr, repl_line_addr;
   Flag tag_aliasing;
   uns bank_id = get_btb_bank_id(BTB_BANKS, fetch_addr, &intra_bank_addr);
+  // On the trace frontends' wrong path the outcome is unknown: train on the prediction. An indirect
+  // branch without a predicted target trains nothing (its fall-through is never its target).
+  const Flag dir = op_dir_or_pred(op, op->bp_pred_info->pred_orig);
+  const Addr target =
+      op_target_or_pred(op, op->bp_pred_info->pred == TAKEN ? op->bp_pred_info->pred_npc : ADDR_INVALID);
+  if (target == ADDR_INVALID)
+    return;
 
   // if it was a btb miss, it is time to write it into the btb
-  if (btb_pred_miss(op->btb_pred_info) && op->oracle_info.dir == TAKEN) {
-    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+  if (btb_pred_miss(op->btb_pred_info) && dir == TAKEN) {
+    ASSERT(bp_data->proc_id, target != ADDR_INVALID);
     if (BTB_OFF_PATH_WRITES || !op->off_path) {
-      DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
-                hexstr64s(op->oracle_info.target));
+      DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr), hexstr64s(target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
       stat_event_btb_addr(op->proc_id, fetch_addr);
@@ -615,12 +625,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
         btb_line = (Addr*)cache_insert(&bp_data->btb[bank_id], bp_data->proc_id, intra_bank_addr, &btb_line_addr,
                                        &repl_line_addr);
       }
-      *btb_line = op->oracle_info.target;
+      *btb_line = target;
       // FIXME: the exceptions to this assert are really about x86 vs Alpha
       ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
     }
-  } else if (!btb_pred_miss(op->btb_pred_info) && op->oracle_info.dir == TAKEN) {
-    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+  } else if (!btb_pred_miss(op->btb_pred_info) && dir == TAKEN) {
+    ASSERT(bp_data->proc_id, target != ADDR_INVALID);
     // For jitted CF we want to update the BTB if the target changes, even on btb hit
     // or For indirects we want to update the BTB if the target changes, even on btb hit
     // The detection relies on the target stored in the btb
@@ -629,15 +639,14 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
 
     // The following assertion can fail (due to eviction?)
     // ASSERT(bp_data->proc_id, btb_entry);
-    if (btb_line && *btb_line != op->oracle_info.target) {
+    if (btb_line && *btb_line != target) {
       cache_access_impl(&bp_data->btb[bank_id], intra_bank_addr, &btb_line_addr, &tag_aliasing, TRUE);
       if (BTB_OFF_PATH_WRITES || !op->off_path) {
-        DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
-                  hexstr64s(op->oracle_info.target));
+        DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr), hexstr64s(target));
         STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
         STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
         stat_event_btb_addr(op->proc_id, fetch_addr);
-        *btb_line = op->oracle_info.target;
+        *btb_line = target;
         // FIXME: the exceptions to this assert are really about x86 vs Alpha
         ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
       }
@@ -646,13 +655,13 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   }
 
   // Update L0 BTB
-  if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l0, BTB_L0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+  if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && dir == TAKEN) {
+    btb_update_level(bp_data->btb_l0, BTB_L0, bp_data->proc_id, fetch_addr, target);
   }
 
   // Update L1 BTB
-  if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && op->oracle_info.dir == TAKEN) {
-    btb_update_level(bp_data->btb_l1, BTB_L1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
+  if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && dir == TAKEN) {
+    btb_update_level(bp_data->btb_l1, BTB_L1, bp_data->proc_id, fetch_addr, target);
   }
 }
 
@@ -749,22 +758,29 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
   ASSERT(bp_data->proc_id, op->uop->cf_type);
 
+  // trace frontends' wrong path: train on the prediction (see bp_btb_gen_update)
+  const Flag dir = op_dir_or_pred(op, op->bp_pred_info->pred_orig);
+  const Addr target =
+      op_target_or_pred(op, op->bp_pred_info->pred == TAKEN ? op->bp_pred_info->pred_npc : ADDR_INVALID);
+  if (target == ADDR_INVALID)
+    return;
+
   if (BTB_OFF_PATH_WRITES || !op->off_path) {
     Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
     ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->instruction_addr);
     ASSERT(bp_data->proc_id, op->inst->instruction_addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
 
-    if (op->oracle_info.dir == TAKEN) {
-      ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+    if (dir == TAKEN) {
+      ASSERT(bp_data->proc_id, target != ADDR_INVALID);
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
-                hexstr64s(op->inst->instruction_addr), hexstr64s(op->oracle_info.target));
+                hexstr64s(op->inst->instruction_addr), hexstr64s(target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
       stat_event_btb_addr(op->proc_id, btb_index_addr);
 
       Blk_Btb_BrSlot br_slot;
       br_slot.addr = op->inst->instruction_addr;
       br_slot.type = op->uop->cf_type;
-      br_slot.target = op->oracle_info.target;
+      br_slot.target = target;
       br_slot.valid = TRUE;
 
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, 0);
@@ -861,8 +877,10 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   Addr line_addr;
   Addr target;
 
-  if (PERFECT_IBP)
+  if (PERFECT_IBP) {
+    ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
     return op->oracle_info.target;
+  }
 
   /* branch history can be updated in one of two ways */
   /* 1. branch history (USE_PAT_HIST) */
@@ -880,9 +898,9 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
     bp_data->targ_hist >>= bp_data->target_bit_length;
     op->recovery_info.targ_hist =
         bp_data->targ_hist |
-        (op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length) << (32 - bp_data->target_bit_length));
-    bp_data->targ_hist |= op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length)
-                                                            << (32 - bp_data->target_bit_length);
+        (op_target_or_pred(op, 0) >> 2 & N_BIT_MASK(bp_data->target_bit_length) << (32 - bp_data->target_bit_length));
+    bp_data->targ_hist |= op_target_or_pred(op, 0) >> 2 & N_BIT_MASK(bp_data->target_bit_length)
+                                                              << (32 - bp_data->target_bit_length);
   }
   tc_index = hist ^ addr;
   if (IBTB_HASH_TOS)
@@ -906,6 +924,7 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_tagged_update: */
 
 void bp_ibtb_tc_tagged_update(Bp_Data* bp_data, Op* op) {
+  ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
   Addr addr = op->inst->instruction_addr;
   uns32 hist = op->btb_pred_info->ibp_pred_targ_hist;
   uns32 tc_index = hist ^ addr;
@@ -966,8 +985,10 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
   uns32 tc_index;
   Addr tc_entry;
 
-  if (PERFECT_IBP)
+  if (PERFECT_IBP) {
+    ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
     return op->oracle_info.target;
+  }
 
   /* branch history can be updated in one of two ways */
   /* 1. branch history (USE_PAT_HIST) */
@@ -985,9 +1006,9 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
     bp_data->targ_hist >>= bp_data->target_bit_length;
     op->recovery_info.targ_hist =
         bp_data->targ_hist |
-        (op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length) << (32 - bp_data->target_bit_length));
-    bp_data->targ_hist |= op->oracle_info.target >> 2 & N_BIT_MASK(bp_data->target_bit_length)
-                                                            << (32 - bp_data->target_bit_length);
+        (op_target_or_pred(op, 0) >> 2 & N_BIT_MASK(bp_data->target_bit_length) << (32 - bp_data->target_bit_length));
+    bp_data->targ_hist |= op_target_or_pred(op, 0) >> 2 & N_BIT_MASK(bp_data->target_bit_length)
+                                                              << (32 - bp_data->target_bit_length);
   }
   cooked_hist = COOK_HIST_BITS(hist, 0);
   cooked_addr = COOK_ADDR_BITS(addr, 2);
@@ -1013,6 +1034,7 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
 /* bp_tc_tagless_update */
 
 void bp_ibtb_tc_tagless_update(Bp_Data* bp_data, Op* op) {
+  ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
   Addr addr = op->inst->instruction_addr;
   uns32 hist = op->btb_pred_info->ibp_pred_targ_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);

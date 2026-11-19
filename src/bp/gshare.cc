@@ -82,7 +82,7 @@ uns8 bp_gshare_pred(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   const auto& gshare_state = gshare_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst->addr;
+  const Addr addr = op->inst->instruction_addr;
   const uns32 hist = bp_pred_info->pred_global_hist;
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];
@@ -104,7 +104,7 @@ void bp_gshare_update(Op* op, Bp_Pred_Level pred_level) {
 
   const uns proc_id = op->proc_id;
   auto& gshare_state = gshare_state_all_cores.at(proc_id);
-  const Addr addr = op->inst->addr;
+  const Addr addr = op->inst->instruction_addr;
   const uns32 hist = bp_pred_info->pred_global_hist;
   const uns32 pht_index = get_pht_index(addr, hist);
   const uns8 pht_entry = gshare_state.pht[pht_index];

@@ -70,6 +70,8 @@ void get_next_op_buffer_from_pin(uns proc_id) {
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);                       // blocking
   cached_cop_buffers[proc_id] = server->receive<ScarabOpBuffer_type>(proc_id);  // blocking
+  for (compressed_op& cop : cached_cop_buffers[proc_id])
+    cop.decoded = nullptr;  // a pointer from the PIN process
 }
 
 void update_op_buffer_if_empty(uns proc_id) {
@@ -153,7 +155,7 @@ void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, Op* op) {
     cached_cop_buffers[proc_id].pop_front();
   }
 
-  DEBUG(proc_id, "Fetch Op end: %llx (%llu)\n", op->inst->addr, op->inst_uid);
+  DEBUG(proc_id, "Fetch Op end: %llx (%llu)\n", (Addr)op->inst->instruction_addr, op->inst_uid);
 }
 
 void pin_exec_driven_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {

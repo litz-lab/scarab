@@ -21,11 +21,9 @@
 
 /***************************************************************************************
  * File         : static_inst_info.h
- * Description  : Static (read-only after decode) instruction information, split into
- *                per-x86-instruction facts (Static_Inst_Info, one per macro-inst,
- *                shared by all its uops) and per-uop facts (Static_Op_Info, one per
- *                uop). Populated once at decode/intern time; never mutated during
- *                simulation. Dynamic per-execution state lives on Op (see op.h).
+ * Description  : Static per-uop facts (Static_Op_Info), interned once by the uop decoder.
+ *                The per-instruction static part is the frontend's ctype_pin_inst_static
+ *                (op->inst); dynamic per-execution state lives on Op (see op.h).
  ***************************************************************************************/
 
 #ifndef __STATIC_INST_INFO_H__
@@ -44,46 +42,14 @@ typedef struct Static_Reg_Info_struct {
   uns16 id;       // flattened register number (unique across sets)
 } Static_Reg_Info;
 
-// Max uops per macro-instruction that Static_Inst_Info keeps pointers for. Kept small on purpose --
-// this struct is interned by value, so every pointer here is paid per distinct static instruction.
-// Observed max is 7 (SPEC gcc); 16 leaves headroom. The decoder ASSERTs num_uop <= this and prints
-// the offending PC, so if a bigger macro shows up we bump it.
+// Max uops per macro-instruction. Observed max is 7 (SPEC gcc); 16 leaves headroom. The decoder
+// ASSERTs num_uop <= this and prints the offending PC, so if a bigger macro shows up we bump it.
 #define STATIC_INST_MAX_UOPS 16
 
-struct Static_Op_Info_struct;  // forward decl for the uops[] back-pointers below
-
-/* Per-x86-instruction static info: one instance per macro-instruction, shared by
- * every uop the macro cracks into. Interned by {addr, opcode bytes}. */
-typedef struct Static_Inst_Info_struct {
-  Addr addr;           // instruction address (PC)
-  uns64 opcode_lsb;    // raw instruction bytes, first 8B (was ctype_pin_inst.inst_binary_lsb)
-  uns64 opcode_msb;    // raw instruction bytes, last 8B
-  uns8 inst_size;      // x86 instruction length in bytes
-  uns8 num_uop;        // number of uops this macro cracks into (<= STATIC_INST_MAX_UOPS)
-  Addr branch_target;  // static (decoded) branch target, if any
-
-  struct Static_Op_Info_struct* uops[STATIC_INST_MAX_UOPS];  // this macro's uops; num_uop valid entries
-
-  uns16 true_op_type;  // opcode class from PIN (not for Scarab timing)
-  char name[16];       // mnemonic
-
-  Flag is_simd;
-  uns8 num_simd_lanes;
-  uns8 lane_width_bytes;
-  Flag is_gather_scatter;
-
-  Flag fake_inst;  // PIN-synthesized op (exceptions / uninstrumented code)
-  Wrongpath_Nop_Mode_Reason fake_inst_reason;
-
-  uns8 type;        // format type code (legacy; zeroed in PIN path but still read)
-  uns8 qualifiers;  // FP qualifier bit string (legacy; zeroed in PIN path but still read)
-
-  struct Static_Inst_Info_struct* free_list_next;  // fake-op pool free-list link (valid only while recycled)
-} Static_Inst_Info;
-
-/* Per-uop static info: one instance per uop. Interned by {addr, opcode bytes, uop_idx}. */
+/* Per-uop static info: one instance per uop. Interned by {addr, opcode bytes, uop_idx, memory shape}. */
 typedef struct Static_Op_Info_struct {
   uns uop_seq_num;  // index of this uop within its macro-instruction
+  uns8 num_uop;     // uops this instance of the macro cracks into (per memory shape)
 
   Op_Type op_type;
   Mem_Type mem_type;
@@ -109,39 +75,15 @@ typedef struct Static_Op_Info_struct {
 extern "C" {
 #endif
 
-/* Fake (wrong-path-nop) ops cannot be interned by {addr, opcode bytes} -- their addresses are
- * synthesized and mostly unique -- so each one needs its own Static_Inst_Info, recycled through a
- * free list (same pattern as the Dynamic_Inst pool) instead of being malloc'd per op: fake ops are
- * 40-70% of all ops, so that churn dominated allocator time. The returned struct is uninitialized;
- * the caller copies a per-kind template over it. Their Static_Op_Info is shared, not allocated. */
-Static_Inst_Info* alloc_fake_static_inst(void);
-void free_fake_static_inst(Static_Inst_Info* si);
+/* Fake (wrong-path-nop) ops and trace patches cannot share the decoded instruction at their PC --
+ * their addresses are synthesized or they replace it -- so each op gets its own static part,
+ * recycled through a free list (same pattern as the Dynamic_Inst pool): fake ops are 40-70% of all
+ * ops, so per-op malloc churn dominated allocator time. The returned struct is uninitialized. */
+ctype_pin_inst_static* alloc_op_static_inst(void);
+void free_op_static_inst(ctype_pin_inst_static* st);
 
 #ifdef __cplusplus
 }
 #endif
-
-/* Does any uop of this macro do a load / store / control transfer? Derived from uops[] so there is
- * a single source of truth (num_uop is small, typically 1-3). */
-static inline Flag static_inst_has_load(const Static_Inst_Info* inst) {
-  for (uns i = 0; i < inst->num_uop; i++)
-    if (inst->uops[i]->mem_type == MEM_LD)
-      return TRUE;
-  return FALSE;
-}
-
-static inline Flag static_inst_has_store(const Static_Inst_Info* inst) {
-  for (uns i = 0; i < inst->num_uop; i++)
-    if (inst->uops[i]->mem_type == MEM_ST)
-      return TRUE;
-  return FALSE;
-}
-
-static inline Flag static_inst_has_cf(const Static_Inst_Info* inst) {
-  for (uns i = 0; i < inst->num_uop; i++)
-    if (inst->uops[i]->cf_type != NOT_CF)
-      return TRUE;
-  return FALSE;
-}
 
 #endif /* #ifndef __STATIC_INST_INFO_H__ */

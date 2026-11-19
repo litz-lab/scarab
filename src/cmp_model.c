@@ -469,7 +469,7 @@ void warmup_uncore(uns proc_id, Addr addr, Flag write) {
 
 void cmp_warmup(Op* op) {
   uns proc_id = op->proc_id;
-  Addr ia = op->inst->addr;
+  Addr ia = op->inst->instruction_addr;
   Addr va = op->oracle_info.va;
   Addr dummy_line_addr;
   Addr dummy_line_addr2;

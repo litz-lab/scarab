@@ -30,16 +30,42 @@
 #ifndef __DECODE_CACHE_H__
 #define __DECODE_CACHE_H__
 
-#include <cstdint>
+#include <stdint.h>
 
 #include "globals/global_types.h"
 
 #include "ctype_pin_inst.h"
+#include "static_inst_info.h"
+
+// The uops that instances of one memory shape (num_ld << 8 | num_st) and cf_type crack into,
+// filled by the uop decoder on the first such instance. Most instructions have one variant;
+// gathers/scatters, instances without memory records and PIN's CF_SYS conversions add more.
+typedef struct Uop_Variant_struct {
+  uint16_t mem_shape;
+  uns8 cf_type;
+  uns8 num_uop;  // 0 until the uop decoder fills uops[]
+  struct Static_Op_Info_struct* uops[STATIC_INST_MAX_UOPS];
+} Uop_Variant;
+
+typedef struct DecodedInst DecodedInst;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+// The decoded instruction at st's PC, inserting st when the PC has no entry or one with other bytes
+// (frontends that do not decode into the cache, e.g. PIN). Pointers stay valid for the whole run.
+DecodedInst* decode_cache_static(uns proc_id, const ctype_pin_inst_static* st);
+const ctype_pin_inst_static* decode_cache_entry_static(const DecodedInst* decoded);
+// The entry's uop variant for {mem_shape, cf_type}, added empty (num_uop == 0) on first use.
+Uop_Variant* decode_cache_uops(DecodedInst* decoded, uint16_t mem_shape, uns8 cf_type);
+#ifdef __cplusplus
+}
+
+#include <vector>
 
 // Wrong-path replay (trace_fe.cc): the last on-path instance of a PC, recorded at fetch.
 // Memory addresses are always replayed poisoned; register values and load data as zero.
 struct ReplayRecord {
-  bool valid;    // an instance of this PC was fetched on path
   uint8_t fake;  // Wrongpath_Nop_Mode_Reason of the PT fake that replaced it, 0 if none
   bool taken;
   bool exit;
@@ -55,7 +81,7 @@ struct ReplayRecord {
 
 // An instruction decoded once and reused on every later visit to its PC.
 struct DecodedInst {
-  ctype_pin_inst_static inst;
+  ctype_pin_inst_static inst;  // first: InstInfo's decoded and static_info alias it
   int num_mem_ops;    // memory records the trace delivers after the instruction record
   bool unknown_type;  // no bytes to decode: inst is a NOP of the reported size
   bool is_rep;
@@ -76,11 +102,26 @@ struct DecodedInst {
   uint8_t mem_written_mask;  // bit i: memory operand i is written
 
   ReplayRecord replay;
+
+  // uop decoder: the uops of each memory shape seen so far
+  Uop_Variant uops;
+  std::vector<Uop_Variant>* more_uops;
 };
 
-// Per core: each core's trace has its own address space. Pointers stay valid until erased.
+// Per core (each core's trace has its own address space), one entry per {PC, instruction bytes}:
+// a re-encoded PC (JIT) gets a second entry and the first stays valid for the ops that point to
+// it. Entries are never freed. inst.instruction_addr holds the core's address
+// (convert_to_cmp_addr); frontends overwrite it per instance.
+// The PC's current encoding: the last one inserted or made current.
 DecodedInst* decode_cache_find(uns proc_id, uint64_t pc);
+DecodedInst* decode_cache_find_encoding(uns proc_id, uint64_t pc, uint64_t lsb, uint64_t msb, uint8_t size);
+// Insert a new encoding (keyed by decoded.inst's bytes) and make it the PC's current one.
 DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const DecodedInst& decoded);
-void decode_cache_erase(uns proc_id, uint64_t pc);
+void decode_cache_make_current(uns proc_id, uint64_t pc, DecodedInst* decoded);
+// Wrong-path replay: the entry holding the PC's last on-path instance (its replay record).
+DecodedInst* decode_cache_replay_entry(uns proc_id, uint64_t pc);
+// The PC's replay entry, to read and update in one lookup; the PC must have an entry.
+DecodedInst*& decode_cache_replay_slot(uns proc_id, uint64_t pc);
+#endif
 
 #endif

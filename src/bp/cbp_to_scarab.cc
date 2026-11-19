@@ -69,7 +69,8 @@ class CBP_To_Scarab_Intf {
     uns bp_id = op->parent_FT->get_bp_id();
     if (op->off_path)
       return op->oracle_info.dir;
-    return cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->addr, &op->bp_confidence);
+    return cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->instruction_addr,
+                                                                         &op->bp_confidence);
   }
 
   void spec_update(Op* op, Bp_Pred_Level pred_level) {
@@ -83,11 +84,11 @@ class CBP_To_Scarab_Intf {
     OpType optype = scarab_to_cbp_optype(op->uop->cf_type);
 
     if (is_conditional_branch(op->uop->cf_type)) {
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->UpdatePredictor(op->inst->addr, optype, op->oracle_info.dir,
-                                                                      bp_pred_info->pred, op->oracle_info.target);
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->UpdatePredictor(
+          op->inst->instruction_addr, optype, op->oracle_info.dir, bp_pred_info->pred, op->oracle_info.target);
     } else {
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst->addr, optype, op->oracle_info.dir,
-                                                                     op->oracle_info.target);
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst->instruction_addr, optype,
+                                                                     op->oracle_info.dir, op->oracle_info.target);
     }
   }
 
@@ -113,8 +114,8 @@ uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op, Bp_Pred_Level pred_level) {
   if (op->off_path)
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON)
       return op->oracle_info.dir;
-  uns8 pred =
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->addr, &op->bp_confidence, op, bp_id);
+  uns8 pred = cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->instruction_addr,
+                                                                            &op->bp_confidence, op, bp_id);
 
   return pred;
 }
@@ -142,8 +143,8 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
     if (SPEC_LEVEL < BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON)
       return;
     if (is_conditional)
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdateAtCond(op->inst->addr, pred_dir, true);
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->addr, optype, pred_dir,
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdateAtCond(op->inst->instruction_addr, pred_dir, true);
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->instruction_addr, optype, pred_dir,
                                                                op->oracle_info.target);
     return;
   }
@@ -160,19 +161,19 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
 
   // Real update start
   if (is_conditional) {
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdateAtCond(op->inst->addr, pred_dir, false);
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->addr, optype, pred_dir,
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdateAtCond(op->inst->instruction_addr, pred_dir, false);
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->instruction_addr, optype, pred_dir,
                                                                op->oracle_info.target);
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(op->inst->addr, optype, op->oracle_info.dir,
-                                                                          bp_pred_info->pred, op->oracle_info.target,
-                                                                          op->recovery_info.branch_id);
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(
+          op->inst->instruction_addr, optype, op->oracle_info.dir, bp_pred_info->pred, op->oracle_info.target,
+          op->recovery_info.branch_id);
   } else {
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->addr, optype, pred_dir,
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->instruction_addr, optype, pred_dir,
                                                                op->oracle_info.target);
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON)
-      cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst->addr, optype, op->oracle_info.dir,
-                                                                     op->oracle_info.target);
+      cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst->instruction_addr, optype,
+                                                                     op->oracle_info.dir, op->oracle_info.target);
   }
   // Real update end
 
@@ -204,12 +205,12 @@ void CBP_To_Scarab_Intf<TAGE64K>::update(Op* op,
   Flag is_conditional = is_conditional_branch(op->uop->cf_type);
 
   if (is_conditional)
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(op->inst->addr, optype, op->oracle_info.dir,
-                                                                        bp_pred_info->pred, op->oracle_info.target,
-                                                                        op->recovery_info.branch_id);
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->NonSpecUpdateAtCond(
+        op->inst->instruction_addr, optype, op->oracle_info.dir, bp_pred_info->pred, op->oracle_info.target,
+        op->recovery_info.branch_id);
   else
-    cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst->addr, optype, op->oracle_info.dir,
-                                                                   op->oracle_info.target);
+    cbp_predictors_all_cores.at(proc_id).at(bp_id)->TrackOtherInst(op->inst->instruction_addr, optype,
+                                                                   op->oracle_info.dir, op->oracle_info.target);
 }
 
 template <>
@@ -297,6 +298,6 @@ void bp_alt_spec_update_TAGE64K(uns proc_id, uns alt_bp_id, Op* trigger_op, Flag
   // / TakeCheckpoint (those are gated on bp_id == 0 in the regular path; alt's
   // predictor doesn't track those structures).
   if (is_conditional)
-    alt_tage->SpecUpdateAtCond(trigger_op->inst->addr, alt_dir, false);
-  alt_tage->SpecUpdate(trigger_op->inst->addr, optype, alt_dir, trigger_op->oracle_info.target);
+    alt_tage->SpecUpdateAtCond(trigger_op->inst->instruction_addr, alt_dir, false);
+  alt_tage->SpecUpdate(trigger_op->inst->instruction_addr, optype, alt_dir, trigger_op->oracle_info.target);
 }

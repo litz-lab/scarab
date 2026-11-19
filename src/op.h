@@ -173,7 +173,7 @@ struct Op_struct {
   Counter unique_num;           // unique number for each instance of an op (not reset on recovery)
   Counter unique_num_per_proc;  // unique number per core
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
-  Static_Inst_Info* inst;       // shared per-macro-instruction static info
+  const ctype_pin_inst_static* inst;  // the decoded instruction (shared), or the op's own for fakes/patches
   Static_Op_Info* uop;          // per-uop static info
   Dynamic_Inst* dyn_inst;       // this op's dynamic macro instance (its sibling uop ops)
   Op_Info oracle_info;          // information about the execution of the op in the oracle
@@ -286,15 +286,15 @@ struct Op_struct {
 
 // Reach this op's sibling dynamic uop ops via its Dynamic_Inst (index 0 == bom, num_uops-1 == eom).
 static inline uns op_inst_num_uops(const Op* op) {
-  return op->inst->num_uop;
+  return op->uop->num_uop;
 }
 static inline Op* op_inst_uop(const Op* op, uns i) {
-  ASSERT(op->proc_id, op->dyn_inst && i < op->inst->num_uop);
+  ASSERT(op->proc_id, op->dyn_inst && i < op->uop->num_uop);
   return op->dyn_inst->uops[i];
 }
 static inline Op* op_inst_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
-  return op->dyn_inst->uops[op->inst->num_uop - 1];
+  return op->dyn_inst->uops[op->uop->num_uop - 1];
 }
 
 static inline Counter op_get_fetch_cycle(const Op* op) {

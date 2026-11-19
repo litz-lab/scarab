@@ -271,7 +271,7 @@ void recover_icache_stage() {
         op_select_bp_pred_info(cur_data->ops[ii], BP_PRED_MAIN);
         DEBUG(ic->proc_id, "Recovery op found in %s slot:%u op_num:%llu off_path:%u addr:0x%llx\n", cur_data->name, ii,
               (unsigned long long)cur_data->ops[ii]->op_num, cur_data->ops[ii]->off_path,
-              (unsigned long long)cur_data->ops[ii]->inst->addr);
+              (unsigned long long)cur_data->ops[ii]->inst->instruction_addr);
       }
       if (FLUSH_OP(cur_data->ops[ii])) {
         DEBUG(ic->proc_id, "Icache flushing op_num:%llu off_path:%u\n", (unsigned long long)cur_data->ops[ii]->op_num,
@@ -982,7 +982,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     }
 
     ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
-            op->inst->addr, ic->off_path, op->off_path);
+            (Addr)op->inst->instruction_addr, ic->off_path, op->off_path);
     ASSERT(ic->proc_id, ii == 0 || cur_data->ops[ii - 1]->unique_num < op->unique_num);
 
     if (!op->off_path) {
@@ -1039,13 +1039,13 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     DEBUG(ic->proc_id,
           "Fetching op from Icache addr: %s off: %d inst_info: %p ii_addr: %s "
           "dis: %s opnum: (%s:%s)\n",
-          hexstr64s(op->inst->addr), op->off_path, (void*)op->inst, hexstr64s(op->inst->addr), disasm_op(op, TRUE),
-          unsstr64(op->op_num), unsstr64(op->unique_num));
+          hexstr64s(op->inst->instruction_addr), op->off_path, (void*)op->inst, hexstr64s(op->inst->instruction_addr),
+          disasm_op(op, TRUE), unsstr64(op->op_num), unsstr64(op->unique_num));
 
     if (op->uop->cf_type) {
       // TODO: can we move this prefetch update to decoupled front-end or need it be here?
       if (DJOLT_ENABLE)
-        update_djolt(ic->proc_id, op->inst->addr, op->uop->cf_type, op->bp_pred_info->pred_npc);
+        update_djolt(ic->proc_id, op->inst->instruction_addr, op->uop->cf_type, op->bp_pred_info->pred_npc);
 
       ASSERT(ic->proc_id, (((op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) << 2) |
                            ((op->bp_pred_info->recovery_point == RECOVER_AT_DECODE) << 1) |

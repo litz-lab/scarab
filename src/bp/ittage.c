@@ -358,7 +358,7 @@ Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
 
   const Ittage* it = bp_data->ittage;
   const Ittage_Hist* h = bp_data->ittage_hist;
-  const Addr pc = op->inst->addr;
+  const Addr pc = op->inst->instruction_addr;
   Ittage_Pred_Info* pi = &op->btb_pred_info->ittage;
 
   pi->provider = -1;
@@ -563,8 +563,8 @@ void bp_ittage_checkpoint(Bp_Data* bp_data, Op* op) {
 }
 
 void bp_ittage_spec_update(Bp_Data* bp_data, Op* op, const Bp_Pred_Info* bp_pred_info) {
-  hist_update(bp_data->ittage, bp_data->ittage_hist, op->uop->cf_type, op->inst->addr, bp_pred_info->pred_orig == TAKEN,
-              bp_pred_info->pred_npc);
+  hist_update(bp_data->ittage, bp_data->ittage_hist, op->uop->cf_type, op->inst->instruction_addr,
+              bp_pred_info->pred_orig == TAKEN, bp_pred_info->pred_npc);
 }
 
 /**************************************************************************************/

@@ -238,7 +238,8 @@ static inline Op* map_dep_find_last_store(Op* op, Hash_Table* mem_hash, Flag add
         src_op->marked = TRUE;  // mark op to avoid adding duplicate sources
         STAT_EVENT(op->proc_id, FORWARDED_LD);
         DEBUG(map_data->proc_id, "Added dep op_num:%s  src_op_num:%s  src_num:%d  op:%s  src:%s\n",
-              unsstr64(op->op_num), unsstr64(src_op->op_num), op->num_srcs - 1, op->inst->name, src_op->inst->name);
+              unsstr64(op->op_num), unsstr64(src_op->op_num), op->num_srcs - 1, op->inst->pin_iclass,
+              src_op->inst->pin_iclass);
       }
       if (!last_src_op || last_src_op->op_num < src_op->op_num) /* take latest store only */
         last_src_op = src_op;

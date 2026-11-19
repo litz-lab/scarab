@@ -607,7 +607,7 @@ Flag is_node_stage_stalled() {
 
 void debug_print_retired_uop(Op* op) {
   PRINT_RETIRED_UOP(node->proc_id, "============================\n");
-  PRINT_RETIRED_UOP(node->proc_id, "EIP: 0x%llx\n", op->inst->addr);
+  PRINT_RETIRED_UOP(node->proc_id, "EIP: 0x%llx\n", (Addr)op->inst->instruction_addr);
   PRINT_RETIRED_UOP(node->proc_id, "Op Type: %s\n", Op_Type_str(op->uop->op_type));
   PRINT_RETIRED_UOP(node->proc_id, "Mem Type: %d\n", op->uop->mem_type);
   PRINT_RETIRED_UOP(node->proc_id, "CF Type: %d\n", op->uop->cf_type);

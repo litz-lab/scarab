@@ -171,8 +171,7 @@ void* scarab_test_FetchOp(void* ptr) {
 
         pin_exec_driven_fetch_op(i, &op);
 
-        EXPECT_EQ(op.fetch_addr,
-                  trace[scarab_side_trace_index[i]].instruction_addr);
+        EXPECT_EQ(op.fetch_addr, trace[scarab_side_trace_index[i]].st.instruction_addr);
       } while(!op.eom);
 
       scarab_side_trace_index[i]++;

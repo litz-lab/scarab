@@ -138,7 +138,7 @@ void recover_decode_stage() {
           op_select_bp_pred_info(cur->ops[jj], BP_PRED_MAIN);
           DEBUG(dec->proc_id, "Recovery op found in Decode stage:%u slot:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
                 jj, (unsigned long long)cur->ops[jj]->op_num, cur->ops[jj]->off_path,
-                (unsigned long long)cur->ops[jj]->inst->addr);
+                (unsigned long long)cur->ops[jj]->inst->instruction_addr);
         }
         if (FLUSH_OP(cur->ops[jj])) {
           DEBUG(dec->proc_id, "Decode flushing op_num:%llu off_path:%u\n", (unsigned long long)cur->ops[jj]->op_num,
@@ -244,7 +244,8 @@ void update_decode_stage(Stage_Data* src_sd) {
     Op* op = dec->last_sd->ops[ii];
     ASSERT(dec->proc_id, op != NULL);
     ASSERT(dec->proc_id, !op->fetched_from_uop_cache);
-    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx off_path:%i\n", op->op_num, op->inst->addr, op->off_path);
+    DEBUG(dec->proc_id, "Decoding op op_num=%llu, addr=%llx off_path:%i\n", op->op_num,
+          (Addr)op->inst->instruction_addr, op->off_path);
     decode_stage_process_op(op);
     uop_cache_insert_op(op);
   }
@@ -259,7 +260,7 @@ void decode_stage_process_op(Op* op) {
 
   if (cf) {
     DEBUG(dec->proc_id, "Decode CF instruction bar:%i fetch_addr:%llx op_num:%llu recover:%i\n",
-          op->uop->bar_type & BAR_FETCH ? TRUE : FALSE, op->inst->addr, op->op_num,
+          op->uop->bar_type & BAR_FETCH ? TRUE : FALSE, (Addr)op->inst->instruction_addr, op->op_num,
           op->bp_pred_info->recovery_point == RECOVER_AT_DECODE);
     // it is a direct branch, so the target is now known
     if (cf <= CF_CALL) {
@@ -282,7 +283,7 @@ void decode_stage_process_op(Op* op) {
     }
 
     if (FDIP_DUAL_PATH_PREF_UOC_ONLINE_ENABLE)
-      increment_branch_count(op->inst->addr);
+      increment_branch_count(op->inst->instruction_addr);
   }
 }
 

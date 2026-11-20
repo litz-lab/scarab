@@ -156,7 +156,7 @@ void recover_exec_stage() {
     if (op && IS_FLUSHING_OP(op)) {
       op_select_bp_pred_info(op, BP_PRED_MAIN);
       DEBUG(exec->proc_id, "Recovery op found in Exec FU:%u op_num:%llu off_path:%u addr:0x%llx\n", ii,
-            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->addr);
+            (unsigned long long)op->op_num, op->off_path, (unsigned long long)op->inst->instruction_addr);
     }
     if (op && FLUSH_OP(op)) {
       DEBUG(exec->proc_id, "Exec flushing op_num:%llu off_path:%u\n", (unsigned long long)op->op_num, op->off_path);
@@ -423,11 +423,12 @@ static inline void exec_stage_inc_power_stats(Op* op) {
     INC_STAT_EVENT(op->proc_id, POWER_INT_REGFILE_READ, op->uop->num_src_regs);
     INC_STAT_EVENT(op->proc_id, POWER_INT_REGFILE_WRITE, op->uop->num_dest_regs);
 
+    // the legacy per-instruction type these indexed was always 0 (OP_INV)
     if (power_get_fu_type(op->uop->op_type, op->inst->is_simd) == POWER_FU_MUL_DIV) {
-      INC_STAT_EVENT(op->proc_id, POWER_MUL_ACCESS, abs(op_type_delays[op->inst->type]));
+      INC_STAT_EVENT(op->proc_id, POWER_MUL_ACCESS, abs(op_type_delays[OP_INV]));
       STAT_EVENT(op->proc_id, POWER_CDB_MUL_ACCESS);
     } else {
-      INC_STAT_EVENT(op->proc_id, POWER_IALU_ACCESS, abs(op_type_delays[op->inst->type]));
+      INC_STAT_EVENT(op->proc_id, POWER_IALU_ACCESS, abs(op_type_delays[OP_INV]));
       STAT_EVENT(op->proc_id, POWER_CDB_IALU_ACCESS);
     }
   } else {
@@ -442,7 +443,7 @@ static inline void exec_stage_inc_power_stats(Op* op) {
     INC_STAT_EVENT(op->proc_id, POWER_FP_REGFILE_READ, op->uop->num_src_regs);
     INC_STAT_EVENT(op->proc_id, POWER_FP_REGFILE_WRITE, op->uop->num_dest_regs);
 
-    INC_STAT_EVENT(op->proc_id, POWER_FPU_ACCESS, abs(op_type_delays[op->inst->type]));
+    INC_STAT_EVENT(op->proc_id, POWER_FPU_ACCESS, abs(op_type_delays[OP_INV]));
     STAT_EVENT(op->proc_id, POWER_CDB_FPU_ACCESS);
   }
 

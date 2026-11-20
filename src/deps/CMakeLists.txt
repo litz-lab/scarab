@@ -28,7 +28,12 @@ target_include_directories(xed INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/xed/obj/)
 target_link_libraries(xed INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/xed/obj/libxed.a)
 
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
-  add_subdirectory(dynamorio)
+  # EXCLUDE_FROM_ALL: `make` builds only the DynamoRIO targets scarab links (via
+  # pt_memtrace below), not the rest of DynamoRIO (elfutils, drrun, drsyms, the drmemtrace
+  # client and launchers, ...), which was nearly half of the build's CPU time.
+  # To build the tracing tools (drrun, libdrmemtrace.so, drraw2trace) as well:
+  #   make -C <build dir>/deps/dynamorio
+  add_subdirectory(dynamorio EXCLUDE_FROM_ALL)
   add_library(pt_memtrace INTERFACE)
 
   target_include_directories(pt_memtrace

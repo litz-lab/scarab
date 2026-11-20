@@ -54,6 +54,10 @@ Addr pin_exec_driven_next_fetch_addr(uns proc_id);
 /* Get an op from pin_exec_driven */
 void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, struct Op_struct* op);
 
+// empty stub
+static inline void pin_exec_driven_consume(uns proc_id, uns64 inst_uid) {
+}
+
 /* Redirect pin_exec_driven (down the wrong path) */
 void pin_exec_driven_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr);
 

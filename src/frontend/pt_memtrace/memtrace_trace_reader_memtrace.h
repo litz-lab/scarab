@@ -30,6 +30,7 @@
 
 #include "globals/assert.h"
 
+#include "frontend/decode_cache.h"
 #include "frontend/pt_memtrace/memtrace_trace_reader.h"
 
 #undef ASSERT
@@ -55,6 +56,7 @@ class TraceReaderMemtrace : public TraceReader {
   void processInst(InstInfo* _info, instr_t* predecoded_dr);
   /// When non-null and encoding_is_new, use this instead of decoding again (caller-owned).
   void processDrIsaInst(InstInfo* _info, bool has_another_mem, instr_t* predecoded);
+  DecodedInst* lookupDecoded();
   uint32_t add_dependency_info(ctype_pin_inst* info, instr_t* drinst);
   void fill_in_basic_info(ctype_pin_inst* info, instr_t* drinst, size_t size, dynamorio::drmemtrace::trace_type_t type);
   bool typeIsMem(dynamorio::drmemtrace::trace_type_t _type);

@@ -668,7 +668,19 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         bp_pred_info->pred = TAKEN;
         bp_pred_info->pred_orig = TAKEN;
       }
-      if (ibp_hit) {
+      // Fetch knows the branch is indirect only from a BTB entry; without one it falls through and decode
+      // redirects to a correct iBTB target.
+      if (ibp_hit && !btb_hit) {
+        bp_pred_info->pred = NOT_TAKEN;
+        bp_pred_info->pred_npc = pc_plus_offset;
+        if (op->oracle_info.target == pred_target) {
+          bp_pred_info->recovery_point = RECOVER_AT_DECODE;
+          STAT_EVENT_BP_SPLIT_PATH(op, IBR_RECOVER_AT_DECODE_IBTB_BTB_MISS);
+        } else {
+          bp_pred_info->recovery_point = RECOVER_AT_EXEC;
+          STAT_EVENT_BP_SPLIT_PATH(op, IBR_RECOVER_AT_EXEC_IBTB_BTB_MISS);
+        }
+      } else if (ibp_hit) {
         ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           bp_pred_info->recovery_point = RECOVER_AT_NONE;
@@ -713,7 +725,19 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       if (crs_owner)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
 
-      if (ibp_hit) {
+      // Fetch knows the branch is indirect only from a BTB entry; without one it falls through and decode
+      // redirects to a correct iBTB target.
+      if (ibp_hit && !btb_hit) {
+        bp_pred_info->pred = NOT_TAKEN;
+        bp_pred_info->pred_npc = pc_plus_offset;
+        if (op->oracle_info.target == pred_target) {
+          bp_pred_info->recovery_point = RECOVER_AT_DECODE;
+          STAT_EVENT_BP_SPLIT_PATH(op, ICALL_RECOVER_AT_DECODE_IBTB_BTB_MISS);
+        } else {
+          bp_pred_info->recovery_point = RECOVER_AT_EXEC;
+          STAT_EVENT_BP_SPLIT_PATH(op, ICALL_RECOVER_AT_EXEC_IBTB_BTB_MISS);
+        }
+      } else if (ibp_hit) {
         ASSERT(op->proc_id, op->oracle_info.target == op->oracle_info.npc);
         if (op->oracle_info.target == pred_target) {
           bp_pred_info->recovery_point = RECOVER_AT_NONE;

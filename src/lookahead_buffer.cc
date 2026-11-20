@@ -117,6 +117,7 @@ void LookaheadBuffer::insert_ft() {
   update_search_indexes_on_insert(wrptr_lb);
   wrptr_lb = (wrptr_lb + 1) % LOOKAHEAD_BUF_SIZE;
   ft_buffer_count++;
+  op_pool_hold(new_ft->get_ops().size());
   if (new_ft->get_end_reason() == FT_APP_EXIT)
     have_seen_exit = 1;
 }
@@ -129,6 +130,9 @@ FT* LookaheadBuffer::pop_ft() {
   lookahead_buffer[rdptr_lb] = nullptr;
   rdptr_lb = (rdptr_lb + 1) % LOOKAHEAD_BUF_SIZE;
   ft_buffer_count--;
+  op_pool_release(current_read_FT->get_ops().size());
+  // the frontend follows what the core consumed, not what this buffer read
+  frontend_consume(proc_id, current_read_FT->get_last_op()->inst_uid);
   if (!have_seen_exit && (ft_buffer_count < LOOKAHEAD_BUF_SIZE))
     insert_ft();
 

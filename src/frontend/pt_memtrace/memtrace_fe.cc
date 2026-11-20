@@ -85,7 +85,7 @@ void fill_in_dynamic_info(uns proc_id, ctype_pin_inst* info, const InstInfo* ins
   uint8_t ld = 0;
   uint8_t st = 0;
 
-  info->instruction_addr = insi->pc;
+  info->st.instruction_addr = insi->pc;
   info->instruction_next_addr = insi->target;
   info->actually_taken = insi->taken;
   // For direct branches, fill_in_cf_info already set branch_target to the
@@ -95,26 +95,26 @@ void fill_in_dynamic_info(uns proc_id, ctype_pin_inst* info, const InstInfo* ins
   // use the dynamic target from the trace.
   // For REGDEPS CBRs not yet observed taken, branch_target is still 0; mark
   // it ADDR_INVALID so downstream code never silently uses the fall-through.
-  if (info->cf_type == CF_CBR) {
+  if (info->st.cf_type == CF_CBR) {
     // CBR: preserve static target from fill_in_cf_info / learning cache.
     // If still unknown (REGDEPS, never seen taken), mark ADDR_INVALID.
-    if (info->branch_target == 0) {
+    if (info->st.branch_target == 0) {
       if (!insi->taken)
-        info->branch_target = ADDR_INVALID;
+        info->st.branch_target = ADDR_INVALID;
       else
-        info->branch_target = insi->target;
+        info->st.branch_target = insi->target;
     }
   } else {
     // Everything else (BR, CALL, IBR, ICALL, RET, ICO, SYS, non-CF):
     // always use the dynamic target — covers indirect branches whose
     // target varies, and direct branches/jitted code whose target may change.
-    info->branch_target = insi->target;
+    info->st.branch_target = insi->target;
   }
   info->inst_uid = ins_id[proc_id];
   info->last_inst_from_trace = insi->last_inst_from_trace;
   info->fetched_instruction = insi->fetched_instruction;
 
-  if (info->cf_type == CF_RET)
+  if (info->st.cf_type == CF_RET)
     info->actually_taken = 1;
 
 #ifdef PRINT_INSTRUCTION_INFO
@@ -124,18 +124,18 @@ void fill_in_dynamic_info(uns proc_id, ctype_pin_inst* info, const InstInfo* ins
   std::cout << " uid " << std::dec << info->inst_uid << std::endl;
 #endif
 
-  assert(info->size);
+  assert(info->st.size);
 
   if (insi->mem_is_rd[0] || insi->mem_is_rd[1])
-    assert(info->num_ld);
+    assert(info->st.num_ld);
   if (insi->mem_is_wr[0] || insi->mem_is_wr[1])
-    assert(info->num_st);
+    assert(info->st.num_st);
 
   if (!insi->mem_is_rd[0] && !insi->mem_is_rd[1]) {
-    info->num_ld = 0;
+    info->st.num_ld = 0;
   }
   if (!insi->mem_is_wr[0] && !insi->mem_is_wr[1]) {
-    info->num_st = 0;
+    info->st.num_st = 0;
   }
 
   for (uint8_t op = 0; op < 2; op++) {
@@ -149,12 +149,12 @@ void fill_in_dynamic_info(uns proc_id, ctype_pin_inst* info, const InstInfo* ins
   }
 }
 
-static bool is_xchg_rcx_rcx(const ctype_pin_inst* pi) {
+static bool is_xchg_rcx_rcx(const ctype_pin_inst_static* pi) {
   return pi->true_op_type == XED_ICLASS_XCHG && pi->num_src_regs > 1 && pi->src_regs[0] == SCARAB_REG_RCX &&
          pi->src_regs[1] == SCARAB_REG_RCX;
 }
 
-int ffwd(uns proc_id, const ctype_pin_inst* pi) {
+int ffwd(uns proc_id, const ctype_pin_inst_static* pi) {
   if (!FAST_FORWARD) {
     return 0;
   }
@@ -168,7 +168,7 @@ int ffwd(uns proc_id, const ctype_pin_inst* pi) {
 }
 
 int roi(const ctype_pin_inst* pi) {
-  return is_xchg_rcx_rcx(pi) ? 1 : 0;
+  return is_xchg_rcx_rcx(&pi->st) ? 1 : 0;
 }
 
 int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
@@ -210,8 +210,11 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
 
   // Static info (basic_info, deps, simd, cf, etc.) is pre-built in
   // processInst / processDrIsaInst and cached in the decode cache (decode_cache.h).
-  assert(insi->info != nullptr);
-  memcpy(next_onpath_pi, insi->info, sizeof(ctype_pin_inst));
+  assert(insi->static_info != nullptr);
+  memset(next_onpath_pi, 0, sizeof(ctype_pin_inst));
+  next_onpath_pi->st = *insi->static_info;
+  if (!insi->static_info->is_trace_patch)
+    next_onpath_pi->decoded = const_cast<DecodedInst*>(insi->decoded);  // static_info is its inst
   fill_in_dynamic_info(proc_id, next_onpath_pi, insi);
 
   if (PC_PROFILE) {
@@ -219,13 +222,13 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
       pcprof_fe_event(proc_id, next_onpath_pi->inst_uid, PCPROF_EV_SYSCALL, pcprof_pending_syscall);
       pcprof_pending_syscall = -1;
     }
-    if (next_onpath_pi->scarab_marker_roi_begin)
+    if (next_onpath_pi->st.scarab_marker_roi_begin)
       pcprof_fe_event(proc_id, next_onpath_pi->inst_uid, PCPROF_EV_MARK_BEGIN, 0);
-    else if (next_onpath_pi->scarab_marker_roi_end)
+    else if (next_onpath_pi->st.scarab_marker_roi_end)
       pcprof_fe_event(proc_id, next_onpath_pi->inst_uid, PCPROF_EV_MARK_END, 0);
   }
 
-  if (ROI_MARKER_DUMP && next_onpath_pi->scarab_marker_roi_begin == true) {
+  if (ROI_MARKER_DUMP && next_onpath_pi->st.scarab_marker_roi_begin == true) {
     // Windowed runs (memtrace_roi_begin / trace_bbv segments) can start inside
     // a marked region: a BEGIN while already began means we missed the END
     // (outside the window). Re-arm instead of asserting.
@@ -234,7 +237,7 @@ int memtrace_trace_read(int proc_id, ctype_pin_inst* next_onpath_pi) {
     std::cout << "Reached roi dump begin marker, reset stats" << std::endl;
     reset_stats(TRUE);
     roi_dump_began = TRUE;
-  } else if (ROI_MARKER_DUMP && next_onpath_pi->scarab_marker_roi_end == true) {
+  } else if (ROI_MARKER_DUMP && next_onpath_pi->st.scarab_marker_roi_end == true) {
     if (!roi_dump_began) {
       // Window started mid-region: END without a seen BEGIN. Ignore.
       std::cout << "Warning: roi end marker without begin (windowed run?); ignoring" << std::endl;
@@ -318,7 +321,7 @@ void memtrace_setup(uns proc_id) {
       if ((inst_count_to_use % 10000000) == 0)
         std::cout << "Fast forwarded " << inst_count_to_use << " instructions." << (insi->valid ? " Valid" : " Invalid")
                   << " instr." << std::endl;
-    } while (ffwd(proc_id, insi->info));
+    } while (ffwd(proc_id, insi->static_info));
     std::cout << "Exit fast forward " << inst_count_to_use << std::endl;
   }
 }

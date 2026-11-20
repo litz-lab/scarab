@@ -913,16 +913,18 @@ void FDIP::update() {
     }
     if (!bp_id && (FDIP_UTILITY_HASH_ENABLE || FDIP_UC_SIZE || FDIP_BLOOM_FILTER)) {
       udp->clear_old_seniority_ftq();
-      udp->set_last_bbl_start_addr(op->inst->addr);
+      udp->set_last_bbl_start_addr(op->inst->instruction_addr);
     }
 
-    uint64_t pc_addr = op->inst->addr;
-    Addr line_addr = op->inst->addr & ~0x3F;
+    uint64_t pc_addr = op->inst->instruction_addr;
+    Addr line_addr = op->inst->instruction_addr & ~0x3F;
     uint64_t ft_id = (op->parent_FT) ? op->parent_FT->get_ft_info().dynamic_info.FT_id : 0;
-    DEBUG(proc_id,
-          "[FDIP%u] ft_id: %llu, op_num: %llu, op->inst->addr: %llx, line_addr: %llx, last_line_addr: %llx, "
-          "off-path: %d\n",
-          bp_id, (unsigned long long)ft_id, op->op_num, op->inst->addr, line_addr, last_line_addr, op->off_path);
+    DEBUG(
+        proc_id,
+        "[FDIP%u] ft_id: %llu, op_num: %llu, op->inst->instruction_addr: %llx, line_addr: %llx, last_line_addr: %llx, "
+        "off-path: %d\n",
+        bp_id, (unsigned long long)ft_id, op->op_num, (Addr)op->inst->instruction_addr, line_addr, last_line_addr,
+        op->off_path);
     UNUSED(ft_id);
     if (line_addr != last_line_addr) {
       STAT_EVENT(proc_id, FDIP_ATTEMPTED_PREF_ONPATH0 + FDIP_PREF_STAT_COUNT * bp_id + op->off_path);

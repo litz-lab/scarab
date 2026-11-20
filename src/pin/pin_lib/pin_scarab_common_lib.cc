@@ -36,5 +36,5 @@
 uint64_t fast_forward_count = 0;
 
 Flag is_sentinal_op(compressed_op* cop) {
-  return cop->is_sentinel == 1;
+  return cop->st.is_sentinel == 1;
 }

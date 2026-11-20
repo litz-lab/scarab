@@ -116,8 +116,8 @@ static inline void reg_file_debug_print_op(Op *op, int state) {
 
   printf("[OP: %d]\n", state);
   printf("op_num: %lld, off_path: %d, ", op->op_num, op->off_path);
-  printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", op->inst->addr, op_code, xed_iclass_enum_t2str(op_code),
-         op->uop->cf_type, op->uop->mem_type);
+  printf("pc: %lld, opcode: 0x%x(%s), cf: %d, mem: %d\n", (Addr)op->inst->instruction_addr, op_code,
+         xed_iclass_enum_t2str(op_code), op->uop->cf_type, op->uop->mem_type);
 
   printf("src#%d: <", op->uop->num_src_regs);
   for (int ii = 0; ii < op->uop->num_src_regs; ii++)

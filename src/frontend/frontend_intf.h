@@ -56,6 +56,9 @@ typedef struct Frontend_Intf_struct {
   /* Get an op from the frontend */
   void (*fetch_op)(uns proc_id, uns bp_id, struct Op_struct* op);
 
+  /* Let the frontend know that the core consumed the on-path instructions up to this one */
+  void (*consume)(uns proc_id, uns64 inst_uid);
+
   /* Redirect the front end (down the wrong path) */
   void (*redirect)(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr);
 

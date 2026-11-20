@@ -2190,11 +2190,12 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
       req->oldest_op_unique_num =
           ((op->unique_num < req->oldest_op_unique_num) ? op->unique_num : req->oldest_op_unique_num);
       req->oldest_op_op_num = ((op->unique_num < req->oldest_op_unique_num) ? op->op_num : req->oldest_op_op_num);
-      req->oldest_op_addr = ((op->unique_num < req->oldest_op_unique_num) ? op->inst->addr : req->oldest_op_addr);
+      req->oldest_op_addr =
+          ((op->unique_num < req->oldest_op_unique_num) ? op->inst->instruction_addr : req->oldest_op_addr);
     } else {
       req->oldest_op_unique_num = op->unique_num;
       req->oldest_op_op_num = op->op_num;
-      req->oldest_op_addr = op->inst->addr;
+      req->oldest_op_addr = op->inst->instruction_addr;
     }
     if (req->off_path && !(op->off_path)) {  // cmp IGNORE
       STAT_EVENT(req->proc_id, MEM_REQ_MATCH_OFF_PATH_HIT_BY_ON_PATH);
@@ -2443,7 +2444,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, 
 
     new_req->oldest_op_unique_num = op->unique_num;
     new_req->oldest_op_op_num = op->op_num;
-    new_req->oldest_op_addr = op->inst->addr;
+    new_req->oldest_op_addr = op->inst->instruction_addr;
     op->req = new_req;
   }
 
@@ -2641,10 +2642,12 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_ul1_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_hit(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                     (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_ul1_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_miss(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                      (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   } else {
@@ -2659,10 +2662,12 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_umlc_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_hit(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                      (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_umlc_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_miss(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                       (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   }
@@ -2674,7 +2679,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* Step 6: Insert the request into the appropriate MSHR file if it is not already there */
 
-  new_req->loadPC = op ? op->inst->addr : 0;
+  new_req->loadPC = op ? op->inst->instruction_addr : 0;
   new_req->prefetcher_id = (pref_info ? pref_info->prefetcher_id : 0);
   new_req->pref_distance = (pref_info ? pref_info->distance : 0);
   new_req->pref_loadPC = (pref_info ? pref_info->loadPC : 0);
@@ -3959,7 +3964,7 @@ void wp_process_reqbuf_match(Mem_Req* req, Op* op) {
         DEBUG(0,
               "Reqbuf match: On path hits off path. va:%s op:%s op:0x%s "
               "wp_op:0x%s opu:%s wpu:%s dist:%s%s\n",
-              hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst->addr),
+              hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst->instruction_addr),
               hexstr64s(req->oldest_op_addr), unsstr64(op->unique_num), unsstr64(req->oldest_op_unique_num),
               op->unique_num > req->oldest_op_unique_num ? " " : "-",
               op->unique_num > req->oldest_op_unique_num ? unsstr64(op->unique_num - req->oldest_op_unique_num)

@@ -46,6 +46,7 @@ Frontend_Impl frontend_table[] = {
    prefix##_next_fetch_addr,            \
    prefix##_can_fetch_op,               \
    prefix##_fetch_op,                   \
+   prefix##_consume,                    \
    prefix##_redirect,                   \
    prefix##_recover,                    \
    prefix##_retire},

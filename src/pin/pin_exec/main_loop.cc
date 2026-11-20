@@ -310,25 +310,24 @@ void do_fe_null(bool& have_consumed_op) {
         // the user code 11 bytes after the SYSENTER
         // instruction, even though SYSENTER is only a 2 byte
         // instruction...
-        if(strcmp(cop->pin_iclass, "SYSENTER") == 0) {
-          cop->size = 11;
+        if (strcmp(cop->st.pin_iclass, "SYSENTER") == 0) {
+          cop->st.size = 11;
         }
         DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
                   "consuming instruction eip:%" PRIx64
                   ", opcode:%s, ifetch_barrier:%u, cf_type:%u, op_type:%u, "
                   "num_ld: %u, num_st: %u, exit: %u, ins_size: %u\n",
-                  cop->instruction_addr, cop->pin_iclass,
-                  cop->is_ifetch_barrier, cop->cf_type, cop->op_type,
-                  cop->num_ld, cop->num_st, cop->exit, cop->size);
+                  cop->st.instruction_addr, cop->st.pin_iclass, cop->st.is_ifetch_barrier, cop->st.cf_type,
+                  cop->st.op_type, cop->st.num_ld, cop->st.num_st, cop->exit, cop->st.size);
       }
       cop->inst_uid = uid_ctr;
 
-      if (cop->is_repeat && cop->instruction_addr == prior_rep_eip)
+      if (cop->st.is_repeat && cop->st.instruction_addr == prior_rep_eip)
         cop->fetched_instruction = 0;
       else
         cop->fetched_instruction = 1;
 
-      prior_rep_eip = cop->is_repeat ? cop->instruction_addr : 0;
+      prior_rep_eip = cop->st.is_repeat ? cop->st.instruction_addr : 0;
 
       if(pending_syscall && exit_syscall_found) {
         exit_syscall_found = false;
@@ -341,16 +340,16 @@ void do_fe_null(bool& have_consumed_op) {
               "Expected full mailbox for exc @ %" PRIu64 ".\n", uid_ctr);
       cop                    = &op_mailbox;
       op_mailbox_full        = false;
-      cop->cf_type           = CF_SYS;
-      cop->is_ifetch_barrier = 1;
+      cop->st.cf_type = CF_SYS;
+      cop->st.is_ifetch_barrier = 1;
       // cop->fake_inst = 1;
       cop->instruction_next_addr = saved_excp_next_eip;
     }
 
     if(op_mailbox_full) {
-      op_mailbox.instruction_next_addr = cop->instruction_addr;
-      if(op_mailbox.cf_type && op_mailbox.actually_taken) {
-        op_mailbox.branch_target = cop->instruction_addr;
+      op_mailbox.instruction_next_addr = cop->st.instruction_addr;
+      if (op_mailbox.st.cf_type && op_mailbox.actually_taken) {
+        op_mailbox.st.branch_target = cop->st.instruction_addr;
       }
       insert_scarab_op_in_buffer(op_mailbox);
       op_mailbox_full = false;

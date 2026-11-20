@@ -606,6 +606,8 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
                 hexstr64s(op->oracle_info.target));
       STAT_EVENT(op->proc_id, BTB_WRITE + op->off_path);
+      if (op->off_path)
+        STAT_EVENT(op->proc_id, BTB_INSERT_OFFPATH_NOT_CF + op->uop->cf_type);
       STAT_EVENT_BTB_BANK(op->proc_id, MAIN, UPDATE, bank_id);
       stat_event_btb_addr(op->proc_id, fetch_addr);
 

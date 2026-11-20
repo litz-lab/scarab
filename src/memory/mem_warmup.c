@@ -90,25 +90,27 @@ static void warm_uncore_insert(uns proc_id, Warm_Level level, Addr addr, Flag di
   Addr line_addr, repl_line_addr;
   Flag repl_line_valid;
   L1_Data* victim = (L1_Data*)get_next_repl_line(cache, proc_id, addr, &repl_line_addr, &repl_line_valid);
-  if (repl_line_valid) {
-    uns repl_proc_id = get_proc_id_from_cmp_addr(repl_line_addr);
-    if (level == WARM_MLC) {
-      if (victim->dirty || EXCLUSIVE_CACHES)
-        warm_writeback(repl_proc_id, WARM_LLC, repl_line_addr, victim->dirty);
-    } else {
-      STAT_EVENT(repl_proc_id, NORESET_L1_EVICT);
-      STAT_EVENT(repl_proc_id, NORESET_L1_EVICT_NONPREF);
-    }
+  Flag victim_dirty = repl_line_valid && victim->dirty;
+  uns repl_proc_id = repl_line_valid ? get_proc_id_from_cmp_addr(repl_line_addr) : proc_id;
+  if (repl_line_valid && level == WARM_LLC) {
+    STAT_EVENT(repl_proc_id, NORESET_L1_EVICT);
+    STAT_EVENT(repl_proc_id, NORESET_L1_EVICT_NONPREF);
   }
   if (level == WARM_LLC) {
     STAT_EVENT(proc_id, NORESET_L1_FILL);
     STAT_EVENT(proc_id, NORESET_L1_FILL_NONPREF);
   }
   /* cache_insert evicts the victim chosen above: nothing touched this cache in between. */
+  Addr victim_addr = repl_line_addr;
   L1_Data* data = (L1_Data*)cache_insert(cache, proc_id, addr, &line_addr, &repl_line_addr);
   memset(data, 0, sizeof(L1_Data));
   data->proc_id = proc_id;
   data->dirty = dirty;
+  /* Send the MLC victim down only now that it has left the MLC: memory.c queues it as a writeback
+     request that reaches the LLC after the fill, and warm_writeback's exclusive duplicate check
+     would otherwise find the victim itself still in the MLC and drop it. */
+  if (repl_line_valid && level == WARM_MLC && (victim_dirty || EXCLUSIVE_CACHES))
+    warm_writeback(repl_proc_id, WARM_LLC, victim_addr, victim_dirty);
 }
 
 /* A writeback (dirty) or a clean demotion arriving at an uncore level. */

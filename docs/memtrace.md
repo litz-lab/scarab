@@ -18,6 +18,8 @@ paths to the trace file.
 3. $ make (from the main scarab directory)
 
 ##### Capturing Memtraces
+0. Build DynamoRIO's tracing tools (`make` builds only the parts of DynamoRIO that scarab links)
+$ make -C <SCARAB_BUILD_DIR>/deps/dynamorio
 1. Trace a workload
 $ <SCARAB_BUILD_DIR>/deps/dynamorio/bin64/drrun -c <SCARAB_BUILD_DIR>deps/dynamorio/clients/lib64/release/libdrmemtrace.so -offline -trace_after_instrs 1M -exit_after_tracing 1G -- <TRACED_WORKLOAD>
 2. Copy binaries and shared libs and convert trace 

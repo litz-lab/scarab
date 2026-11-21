@@ -1047,8 +1047,12 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->uop->cf_type);
 
-  if (op->uop->cf_type != CF_SYS)
-    bp_data->bp_btb->update_func(bp_data, op);
+  // Decode writes a conditional branch it predicts taken (it resteers there on a BTB miss), on either path;
+  // one predicted not-taken that resolves taken is written in bp_resolve_op.
+  Cf_Type cf = op->uop->cf_type;
+  if (cf != CF_SYS)
+    bp_data->bp_btb->update_func(bp_data, op,
+                                 cf == CF_CBR || cf == CF_REP ? op->bp_pred_info->pred_orig : op->oracle_info.dir);
 
   // special case updates
   switch (op->uop->cf_type) {
@@ -1075,6 +1079,9 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
     return;
   }
   ASSERT(op->proc_id, op_oracle_known(op));
+  if ((op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) && op->oracle_info.dir == TAKEN &&
+      op->bp_pred_info->pred_orig != TAKEN)
+    bp_data->bp_btb->update_func(bp_data, op, TAKEN);
   // Always train both predictors regardless of which one made the active prediction.
   op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
   bp_data->bp->update_func(op, BP_PRED_MAIN);

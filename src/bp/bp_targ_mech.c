@@ -592,20 +592,12 @@ void bp_btb_gen_pred(Bp_Data* bp_data, Op* op) {
 /**************************************************************************************/
 /* bp_btb_gen_update: */
 
-void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
+void bp_btb_gen_update(Bp_Data* bp_data, Op* op, Flag taken) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
   ASSERT(bp_data->proc_id, op->uop->cf_type);
-  // An unknown wrong-path outcome (trace frontends) writes nothing, with one exception: a conditional branch
-  // that missed the BTB but that the direction predictor predicts taken (pred_orig; pred is forced to
-  // not-taken on a BTB miss). Decode sees it with its static target and would resteer and fill the BTB, as for
-  // CBR_RECOVER_BTB_MISS_T_T on the correct path.
-  Flag dir = op->oracle_info.dir;
-  if (!op_oracle_known(op)) {
-    if (op_target_unknown(op) || !btb_pred_miss(op->btb_pred_info) || op->bp_pred_info->pred_orig != TAKEN)
-      return;
-    dir = TAKEN;
-  }
+  if (op_target_unknown(op))  // an unknown wrong-path indirect target (trace frontends) writes nothing
+    return;
 
   Addr fetch_addr = op->inst->instruction_addr;
   Addr intra_bank_addr;
@@ -614,7 +606,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   uns bank_id = get_btb_bank_id(BTB_BANKS, fetch_addr, &intra_bank_addr);
 
   // if it was a btb miss, it is time to write it into the btb
-  if (btb_pred_miss(op->btb_pred_info) && dir == TAKEN) {
+  if (btb_pred_miss(op->btb_pred_info) && taken) {
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     if (BTB_OFF_PATH_WRITES || !op->off_path) {
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  addr:0x%s  target:0x%s\n", hexstr64s(fetch_addr),
@@ -633,7 +625,7 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
       // FIXME: the exceptions to this assert are really about x86 vs Alpha
       ASSERT(bp_data->proc_id, (fetch_addr == btb_line_addr) || TRUE);
     }
-  } else if (!btb_pred_miss(op->btb_pred_info) && dir == TAKEN) {
+  } else if (!btb_pred_miss(op->btb_pred_info) && taken) {
     ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
     // For jitted CF we want to update the BTB if the target changes, even on btb hit
     // or For indirects we want to update the BTB if the target changes, even on btb hit
@@ -660,12 +652,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   }
 
   // Update L0 BTB
-  if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && dir == TAKEN) {
+  if (BTB_L0_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && taken) {
     btb_update_level(bp_data->btb_l0, BTB_L0, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 
   // Update L1 BTB
-  if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && dir == TAKEN) {
+  if (BTB_L1_PRESENT && (BTB_OFF_PATH_WRITES || !op->off_path) && taken) {
     btb_update_level(bp_data->btb_l1, BTB_L1, bp_data->proc_id, fetch_addr, op->oracle_info.target);
   }
 }
@@ -758,27 +750,19 @@ void bp_btb_block_pred(Bp_Data* bp_data, Op* op) {
 /**************************************************************************************/
 /* bp_btb_block_update: */
 
-void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
+void bp_btb_block_update(Bp_Data* bp_data, Op* op, Flag taken) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, bp_data->bp_id == 0);
   ASSERT(bp_data->proc_id, op->uop->cf_type);
-  // An unknown wrong-path outcome (trace frontends) writes nothing, with one exception: a conditional branch
-  // that missed the BTB but that the direction predictor predicts taken (pred_orig; pred is forced to
-  // not-taken on a BTB miss). Decode sees it with its static target and would resteer and fill the BTB, as for
-  // CBR_RECOVER_BTB_MISS_T_T on the correct path.
-  Flag dir = op->oracle_info.dir;
-  if (!op_oracle_known(op)) {
-    if (op_target_unknown(op) || !btb_pred_miss(op->btb_pred_info) || op->bp_pred_info->pred_orig != TAKEN)
-      return;
-    dir = TAKEN;
-  }
+  if (op_target_unknown(op))  // an unknown wrong-path indirect target (trace frontends) writes nothing
+    return;
 
   if (BTB_OFF_PATH_WRITES || !op->off_path) {
     Addr btb_index_addr = op->btb_pred_info->btb_index_addr;
     ASSERT(bp_data->proc_id, btb_index_addr <= op->inst->instruction_addr);
     ASSERT(bp_data->proc_id, op->inst->instruction_addr < ADDR_PLUS_OFFSET(btb_index_addr, BTB_BLOCK_SIZE));
 
-    if (dir == TAKEN) {
+    if (taken) {
       ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
       DEBUG_BTB(bp_data->proc_id, "Writing BTB  btb addr:0x%s  op addr:0x%s  target:0x%s\n", hexstr64s(btb_index_addr),
                 hexstr64s(op->inst->instruction_addr), hexstr64s(op->oracle_info.target));

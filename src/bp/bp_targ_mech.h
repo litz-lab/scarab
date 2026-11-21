@@ -53,12 +53,12 @@ static inline uns get_btb_bank_id(uns num_banks, Addr addr, Addr* intra_bank_add
 
 void bp_btb_gen_init(Bp_Data*, Bp_Data*);
 void bp_btb_gen_pred(Bp_Data*, Op*);
-void bp_btb_gen_update(Bp_Data*, Op*);
+void bp_btb_gen_update(Bp_Data*, Op*, Flag);
 void bp_btb_gen_recover(Bp_Data*, Recovery_Info*);
 
 void bp_btb_block_init(Bp_Data*, Bp_Data*);
 void bp_btb_block_pred(Bp_Data*, Op*);
-void bp_btb_block_update(Bp_Data*, Op*);
+void bp_btb_block_update(Bp_Data*, Op*, Flag);
 void bp_btb_block_recover(Bp_Data*, Recovery_Info*);
 
 void bp_ibtb_tc_tagged_init(Bp_Data*, Bp_Data*);

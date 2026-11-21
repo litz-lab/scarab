@@ -45,6 +45,7 @@
 
 #define TAKEN 1
 #define NOT_TAKEN 0
+#define DIR_INVALID 2  // oracle direction unknown (trace frontends' wrong path)
 
 #define MAX_NUM_PROCS 64
 #define MAX_NUM_BPS 5

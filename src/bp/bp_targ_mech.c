@@ -598,11 +598,12 @@ void bp_btb_gen_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, op->uop->cf_type);
   // An unknown wrong-path outcome (trace frontends) writes nothing, with one exception: a conditional branch
   // that missed the BTB but that the direction predictor predicts taken (pred_orig; pred is forced to
-  // not-taken on a BTB miss). Decode sees it with its static target and would resteer and fill the BTB, as for
-  // CBR_RECOVER_BTB_MISS_T_T on the correct path.
+  // not-taken on a BTB miss) and whose static target is backward (a loop branch). Decode sees it with its static
+  // target and would resteer and fill the BTB, as for CBR_RECOVER_BTB_MISS_T_T on the correct path.
   Flag dir = op->oracle_info.dir;
   if (!op_oracle_known(op)) {
-    if (op_target_unknown(op) || !btb_pred_miss(op->btb_pred_info) || op->bp_pred_info->pred_orig != TAKEN)
+    if (op_target_unknown(op) || !btb_pred_miss(op->btb_pred_info) || op->bp_pred_info->pred_orig != TAKEN ||
+        op->oracle_info.target >= op->inst->instruction_addr)
       return;
     dir = TAKEN;
   }
@@ -766,11 +767,12 @@ void bp_btb_block_update(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, op->uop->cf_type);
   // An unknown wrong-path outcome (trace frontends) writes nothing, with one exception: a conditional branch
   // that missed the BTB but that the direction predictor predicts taken (pred_orig; pred is forced to
-  // not-taken on a BTB miss). Decode sees it with its static target and would resteer and fill the BTB, as for
-  // CBR_RECOVER_BTB_MISS_T_T on the correct path.
+  // not-taken on a BTB miss) and whose static target is backward (a loop branch). Decode sees it with its static
+  // target and would resteer and fill the BTB, as for CBR_RECOVER_BTB_MISS_T_T on the correct path.
   Flag dir = op->oracle_info.dir;
   if (!op_oracle_known(op)) {
-    if (op_target_unknown(op) || !btb_pred_miss(op->btb_pred_info) || op->bp_pred_info->pred_orig != TAKEN)
+    if (op_target_unknown(op) || !btb_pred_miss(op->btb_pred_info) || op->bp_pred_info->pred_orig != TAKEN ||
+        op->oracle_info.target >= op->inst->instruction_addr)
       return;
     dir = TAKEN;
   }

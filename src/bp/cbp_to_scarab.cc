@@ -67,7 +67,7 @@ class CBP_To_Scarab_Intf {
     (void)pred_level;
     uns proc_id = op->proc_id;
     uns bp_id = op->parent_FT->get_bp_id();
-    if (op->off_path)
+    if (op->off_path && op->oracle_info.dir != DIR_INVALID)
       return op->oracle_info.dir;
     return cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->instruction_addr,
                                                                          &op->bp_confidence);
@@ -111,7 +111,7 @@ uns8 CBP_To_Scarab_Intf<TAGE64K>::pred(Op* op, Bp_Pred_Level pred_level) {
   (void)pred_level;
   uns proc_id = op->proc_id;
   uns bp_id = op->parent_FT->get_bp_id();
-  if (op->off_path)
+  if (op->off_path && op->oracle_info.dir != DIR_INVALID)
     if (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON)
       return op->oracle_info.dir;
   uns8 pred = cbp_predictors_all_cores.at(proc_id).at(bp_id)->GetPrediction(op->inst->instruction_addr,
@@ -127,8 +127,9 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
   uns bp_id = op->parent_FT->get_bp_id();
   OpType optype = scarab_to_cbp_optype(op->uop->cf_type);
   Flag is_conditional = is_conditional_branch(op->uop->cf_type);
-  Flag pred_dir =
-      (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) ? op->oracle_info.dir : bp_pred_info->pred;
+  // the oracle direction, or the prediction where it is unknown (trace frontends' wrong path)
+  Flag pred_dir = (SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_UPDATE_N_ON) ? op_dir_or_pred(op, bp_pred_info->pred)
+                                                                               : bp_pred_info->pred;
   const Flag l0_wrong = op->bp_pred_l0.recovery_point == RECOVER_AT_FE;
   const Flag main_wrong =
       op->bp_pred_main.recovery_point == RECOVER_AT_DECODE || op->bp_pred_main.recovery_point == RECOVER_AT_EXEC;
@@ -145,7 +146,7 @@ void CBP_To_Scarab_Intf<TAGE64K>::spec_update(Op* op, Bp_Pred_Level pred_level) 
     if (is_conditional)
       cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdateAtCond(op->inst->instruction_addr, pred_dir, true);
     cbp_predictors_all_cores.at(proc_id).at(bp_id)->SpecUpdate(op->inst->instruction_addr, optype, pred_dir,
-                                                               op->oracle_info.target);
+                                                               op_target_or_pred(op, bp_pred_info->pred_npc));
     return;
   }
 

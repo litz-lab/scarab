@@ -99,9 +99,9 @@ uns8 bp_tagescl_pred(Op* op, Bp_Pred_Level pred_level) {
 void bp_tagescl_spec_update(Op* op, Bp_Pred_Level pred_level) {
   Bp_Pred_Info* bp_pred_info = (pred_level == BP_PRED_L0) ? &op->bp_pred_l0 : &op->bp_pred_main;
   uns proc_id = op->proc_id;
-  tagescl_predictors.at(proc_id)->update_speculative_state(op->recovery_info.branch_id, op->inst->instruction_addr,
-                                                           get_branch_type(proc_id, op->uop->cf_type),
-                                                           bp_pred_info->pred, op->oracle_info.target);
+  tagescl_predictors.at(proc_id)->update_speculative_state(
+      op->recovery_info.branch_id, op->inst->instruction_addr, get_branch_type(proc_id, op->uop->cf_type),
+      bp_pred_info->pred, op_target_or_pred(op, bp_pred_info->pred_npc));
 }
 
 void bp_tagescl_update(Op* op, Bp_Pred_Level pred_level) {

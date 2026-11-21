@@ -92,7 +92,7 @@ void bp_bimodal_init() {
 
 uns8 bp_bimodal_pred(Op* op, Bp_Pred_Level pred_level) {
   (void)pred_level;
-  if (op->off_path && SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON) {
+  if (op->off_path && op->oracle_info.dir != DIR_INVALID && SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON) {
     return op->oracle_info.dir;
   }
 

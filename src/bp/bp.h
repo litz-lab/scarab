@@ -246,7 +246,7 @@ typedef struct Bp_Btb_struct {
   const char* name;
   void (*init_func)(Bp_Data*, Bp_Data*);          /* called to initialize the branch target buffer (shares primary) */
   void (*pred_func)(Bp_Data*, Op*);               /* called to predict the branch target */
-  void (*update_func)(Bp_Data*, Op*);             /* */
+  void (*update_func)(Bp_Data*, Op*, Flag);       /* writes the op's target if the Flag (taken) is set */
   void (*recover_func)(Bp_Data*, Recovery_Info*); /* */
 } Bp_Btb;
 

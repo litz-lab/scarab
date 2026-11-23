@@ -1015,7 +1015,8 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
 /* bp_resolve_op: called on cf ops when they complete in the functional unit */
 
 void bp_resolve_op(Bp_Data* bp_data, Op* op) {
-  if (!UPDATE_BP_OFF_PATH && op->off_path) {
+  // a replayed wrong-path outcome (trace frontends) trains nothing
+  if (op->off_path && (!UPDATE_BP_OFF_PATH || op_dir_replayed(op) || op_target_replayed(op))) {
     return;
   }
   // Always train both predictors regardless of which one made the active prediction.

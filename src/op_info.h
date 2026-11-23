@@ -88,6 +88,7 @@ struct Op_Info_struct {
   // control flow fields
   Addr target;             // decoded target of branch, set by oracle
   Flag dir;                // true direction of branch, set by oracle
+  Flag replayed;           // trace frontends' wrong path: dir and target were replayed, not executed (op_dir_or_pred)
   Flag dcmiss;  // dcache miss has occurred
 
   Flag l1_miss;             // is this op an L1 data miss?

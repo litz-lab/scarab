@@ -92,10 +92,6 @@ void bp_bimodal_init() {
 
 uns8 bp_bimodal_pred(Op* op, Bp_Pred_Level pred_level) {
   (void)pred_level;
-  if (op->off_path && SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON) {
-    return op->oracle_info.dir;
-  }
-
   const uns proc_id = op->proc_id;
   const auto& bimodal_state = bimodal_state_all_cores.at(proc_id);
 

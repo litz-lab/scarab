@@ -292,6 +292,26 @@ static inline Op* op_inst_uop(const Op* op, uns i) {
   ASSERT(op->proc_id, op->dyn_inst && i < op->uop->num_uop);
   return op->dyn_inst->uops[i];
 }
+/* The trace frontends replay a wrong-path op's outcome from the last on-path instance of its instruction. A
+   conditional branch's direction and an indirect branch's target replayed that way are not outcomes; where the
+   wrong path needs one, the prediction stands in. */
+static inline Flag op_dir_replayed(const Op* op) {
+  return op->oracle_info.replayed && (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP);
+}
+
+static inline Flag op_target_replayed(const Op* op) {
+  Cf_Type cf = op->uop->cf_type;
+  return op->oracle_info.replayed && (cf == CF_IBR || cf == CF_ICALL || cf == CF_ICO || cf == CF_RET);
+}
+
+static inline Flag op_dir_or_pred(const Op* op, Flag pred) {
+  return op_dir_replayed(op) ? pred : op->oracle_info.dir;
+}
+
+static inline Addr op_target_or_pred(const Op* op, Addr pred_target) {
+  return op_target_replayed(op) ? pred_target : op->oracle_info.target;
+}
+
 static inline Op* op_inst_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
   return op->dyn_inst->uops[op->uop->num_uop - 1];

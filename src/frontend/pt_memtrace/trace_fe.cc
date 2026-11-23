@@ -260,8 +260,10 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
     uop_generator_get_uop(proc_id, op, NULL);
   }
   // off-path ops can never be the last instruction to execute
-  if (off_path_mode_)
+  if (off_path_mode_) {
     op->exit = false;
+    op->oracle_info.replayed = TRUE;
+  }
 
   if (uop_generator_get_eom(proc_id)) {
     if (!off_path_mode_) {

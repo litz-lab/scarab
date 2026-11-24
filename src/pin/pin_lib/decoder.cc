@@ -96,6 +96,18 @@ void get_src_vector_vals(ADDRINT val, ADDRINT scarab_id, UINT32 size);
 void get_dst_vector_vals(ADDRINT val, ADDRINT scarab_id, UINT32 size);
 static inline bool is_arch_gpr(uint8_t reg_id);
 static void insert_reg_val_call(const INS& ins, IPOINT ipoint, AFUNPTR fn, uint8_t scarab_id);
+// decoder_before/decoder_after flags; bits 8-10: GPR value slots used, bits 16+: 4 bits of byte size per slot
+enum {
+  DEC_LD = 1,
+  DEC_LD2 = 2,
+  DEC_ST = 4,
+  DEC_CF = 8
+};
+static const uns DEC_REG_SLOTS = 4;
+static UINT32 add_reg_val_args(const INS& ins, IARGLIST args, uns* nargs, IPOINT ipoint, const uint8_t* regs,
+                               uns num_regs, AFUNPTR per_reg_fn);
+static AFUNPTR decoder_before_fn(uns nargs);
+static AFUNPTR decoder_after_fn(uns nargs);
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count);
 void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info);
 void create_compressed_op_after(ADDRINT iaddr);
@@ -189,49 +201,52 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
                    INS_Opcode(ins), IARG_END);
   }
 
-  if(INS_IsVgather(ins) || INS_IsVscatter(ins)) {
+  // One BEFORE and one AFTER call per instruction: PIN's JIT cost grows with the number of analysis calls.
+  const bool gather_scatter = INS_IsVgather(ins) || INS_IsVscatter(ins);
+  if (gather_scatter)
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_gather_scatter_eas, IARG_BOOL, INS_IsVgather(ins),
                    IARG_CONST_CONTEXT, IARG_MULTI_MEMORYACCESS_EA, IARG_END);
-  } else {
-    if(INS_IsMemoryRead(ins)) {
-      if(INS_HasMemoryRead2(ins)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea2, IARG_MEMORYREAD_EA, IARG_MEMORYREAD2_EA,
-                       IARG_MEMORYREAD_SIZE, IARG_END);
-      } else {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea, IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_END);
-      }
-    }
 
-    if(INS_IsMemoryWrite(ins)) {
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea,
-                     IARG_MEMORYWRITE_EA, IARG_END);
+  // Only the arguments this instruction needs, in order: ld_ea, ld_ea2, ld_size, st_ea, taken, GPR values.
+  UINT32 flags = 0;
+  uns nargs = 0;
+  IARGLIST args = IARGLIST_Alloc();
+  if (!gather_scatter && INS_IsMemoryRead(ins)) {
+    flags |= DEC_LD;
+    IARGLIST_AddArguments(args, IARG_MEMORYREAD_EA, IARG_END);
+    if (INS_HasMemoryRead2(ins)) {
+      flags |= DEC_LD2;
+      IARGLIST_AddArguments(args, IARG_MEMORYREAD2_EA, IARG_END);
+      nargs++;
     }
+    IARGLIST_AddArguments(args, IARG_MEMORYREAD_SIZE, IARG_END);
+    nargs += 2;
   }
-
+  if (!gather_scatter && INS_IsMemoryWrite(ins)) {
+    flags |= DEC_ST;
+    IARGLIST_AddArguments(args, IARG_MEMORYWRITE_EA, IARG_END);
+    nargs++;
+  }
   if (info->st.cf_type) {
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_branch_dir,
-                   IARG_BRANCH_TAKEN, IARG_END);
+    flags |= DEC_CF;
+    IARGLIST_AddArguments(args, IARG_BRANCH_TAKEN, IARG_END);
+    nargs++;
   }
+  flags |= add_reg_val_args(ins, args, &nargs, IPOINT_BEFORE, info->st.src_regs, info->st.num_src_regs,
+                            (AFUNPTR)get_src_vector_vals);
+  INS_InsertCall(ins, IPOINT_BEFORE, decoder_before_fn(nargs), IARG_PTR, info, IARG_INST_PTR, IARG_UINT32, flags,
+                 IARG_IARGLIST, args, IARG_END);
+  IARGLIST_Free(args);
 
-  // Instrument GPR operands to capture their runtime values.
-  // Src: IPOINT_BEFORE (values ready before exec). Dst: IPOINT_AFTER
-  // (dst values only exist after exec);
-  if (INS_Valid(ins)) {
-    for (uns i = 0; i < info->st.num_src_regs; i++)
-      insert_reg_val_call(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, info->st.src_regs[i]);
+  if (INS_IsValidForIpointAfter(ins)) {
+    uns dst_nargs = 0;
+    IARGLIST dst_args = IARGLIST_Alloc();
+    UINT32 dst_flags = add_reg_val_args(ins, dst_args, &dst_nargs, IPOINT_AFTER, info->st.dst_regs,
+                                        info->st.num_dst_regs, (AFUNPTR)get_dst_vector_vals);
+    INS_InsertCall(ins, IPOINT_AFTER, decoder_after_fn(dst_nargs), IARG_INST_PTR, IARG_UINT32, dst_flags, IARG_IARGLIST,
+                   dst_args, IARG_END);
+    IARGLIST_Free(dst_args);
   }
-
-  if (INS_Valid(ins)) {
-    if (INS_IsValidForIpointAfter(ins)) {
-      for (uns i = 0; i < info->st.num_dst_regs; i++)
-        insert_reg_val_call(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, info->st.dst_regs[i]);
-      // Attach the dst values captured at IPOINT_AFTER.
-      INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)create_compressed_op_after, IARG_INST_PTR, IARG_END);
-    }
-  }
-
-  // Build the compressed op at IPOINT_BEFORE (dst values not yet known).
-  INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)create_compressed_op, IARG_INST_PTR, IARG_PTR, info, IARG_END);
 }
 
 void create_compressed_op_after(ADDRINT iaddr) {
@@ -373,6 +388,123 @@ void get_st_ea(ADDRINT addr) {
 void get_branch_dir(bool taken) {
   glb_actually_taken = taken;
 }
+
+// Adds up to DEC_REG_SLOTS GPR value args. An instruction with more GPR operands keeps one call per register
+// (inserted here, before the merged call) and uses no slots.
+static UINT32 add_reg_val_args(const INS& ins, IARGLIST args, uns* nargs, IPOINT ipoint, const uint8_t* regs,
+                               uns num_regs, AFUNPTR per_reg_fn) {
+  uns n = 0;
+  for (uns i = 0; i < num_regs; i++)
+    n += is_arch_gpr(regs[i]);
+  UINT32 flags = 0;
+  uns slot = 0;
+  if (n <= DEC_REG_SLOTS) {
+    for (uns i = 0; i < num_regs; i++) {
+      if (!is_arch_gpr(regs[i]))
+        continue;
+      auto it = reg_scarab_to_pin_map.find(regs[i]);
+      REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+      if (REG_valid(pin_reg)) {
+        IARGLIST_AddArguments(args, IARG_REG_VALUE, pin_reg, IARG_END);
+        flags |= (UINT32)REG_Size(pin_reg) << (16 + 4 * slot);
+      } else {
+        IARGLIST_AddArguments(args, IARG_ADDRINT, (ADDRINT)0, IARG_END);
+      }
+      slot++;
+    }
+    flags |= slot << 8;
+    *nargs += slot;
+  } else {
+    for (uns i = 0; i < num_regs; i++)
+      insert_reg_val_call(ins, ipoint, per_reg_fn, regs[i]);
+  }
+  return flags;
+}
+
+// Pushes the slot values for the GPR operands, in operand order (fill_register_values consumes them).
+static void push_reg_slots(deque<Pin_Reg_Val>& vals, const uint8_t* regs, uns num_regs, UINT32 flags,
+                           const ADDRINT* slot_vals) {
+  uns n = (flags >> 8) & 7, slot = 0;
+  for (uns i = 0; i < num_regs && slot < n; i++) {
+    if (!is_arch_gpr(regs[i]))
+      continue;
+    vals.push_back({(uint16_t)regs[i], (uint64_t)slot_vals[slot], (uint8_t)(((flags >> (16 + 4 * slot)) & 0xF) * 8)});
+    slot++;
+  }
+}
+
+// a: the arguments selected by flags, in instrumentation order. 32-bit args (ld_size, taken) arrive in
+// ADDRINT slots, so only their low bits are read.
+static void decoder_before_impl(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const ADDRINT* a) {
+  if (!fast_forward_count) {
+    if (flags & DEC_LD) {
+      const ADDRINT ld_ea = *a++;
+      const ADDRINT ld_ea2 = (flags & DEC_LD2) ? *a++ : 0;
+      const UINT32 size = (UINT32)*a++;
+      if (flags & DEC_LD2)
+        get_ld_ea2(ld_ea, ld_ea2, size);
+      else
+        get_ld_ea(ld_ea, size);
+    }
+    if (flags & DEC_ST)
+      get_st_ea(*a++);
+    if (flags & DEC_CF)
+      get_branch_dir((UINT32)*a++ != 0);
+    push_reg_slots(glb_src_vector_vals, info->st.src_regs, info->st.num_src_regs, flags, a);
+  }
+  create_compressed_op(iaddr, info);
+}
+
+static void decoder_after_impl(ADDRINT iaddr, UINT32 flags, const ADDRINT* a) {
+  if (fast_forward_count)
+    return;
+  push_reg_slots(glb_dst_vector_vals, filled_inst_info->st.dst_regs, filled_inst_info->st.num_dst_regs, flags, a);
+  create_compressed_op_after(iaddr);
+}
+
+template <typename... A>
+static void decoder_before_v(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, A... a) {
+  const ADDRINT v[] = {0, (ADDRINT)a...};
+  decoder_before_impl(info, iaddr, flags, v + 1);
+}
+
+template <typename... A>
+static void decoder_after_v(ADDRINT iaddr, UINT32 flags, A... a) {
+  const ADDRINT v[] = {0, (ADDRINT)a...};
+  decoder_after_impl(iaddr, flags, v + 1);
+}
+
+// one entry point per argument count: at most ld_ea, ld_ea2, ld_size, st_ea, taken + DEC_REG_SLOTS
+#define DEC_A ADDRINT
+static AFUNPTR decoder_before_fn(uns nargs) {
+  static const AFUNPTR fns[] = {
+      (AFUNPTR)decoder_before_v<>,
+      (AFUNPTR)decoder_before_v<DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A, DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A, DEC_A, DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A, DEC_A, DEC_A, DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A>,
+      (AFUNPTR)decoder_before_v<DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A, DEC_A>,
+  };
+  ASSERTX(nargs < sizeof(fns) / sizeof(fns[0]));
+  return fns[nargs];
+}
+
+static AFUNPTR decoder_after_fn(uns nargs) {
+  static const AFUNPTR fns[] = {
+      (AFUNPTR)decoder_after_v<>,
+      (AFUNPTR)decoder_after_v<DEC_A>,
+      (AFUNPTR)decoder_after_v<DEC_A, DEC_A>,
+      (AFUNPTR)decoder_after_v<DEC_A, DEC_A, DEC_A>,
+      (AFUNPTR)decoder_after_v<DEC_A, DEC_A, DEC_A, DEC_A>,
+  };
+  ASSERTX(nargs < sizeof(fns) / sizeof(fns[0]));
+  return fns[nargs];
+}
+#undef DEC_A
 
 // Only GPR values reach the op (fill_register_values), so only GPR operands are captured.
 static void insert_reg_val_call(const INS& ins, IPOINT ipoint, AFUNPTR fn, uint8_t scarab_id) {

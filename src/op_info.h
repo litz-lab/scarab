@@ -86,9 +86,8 @@ struct Op_Info_struct {
   Addr npc;  // the true next pc after the instruction
 
   // control flow fields
-  Addr target;             // decoded target of branch, set by oracle
-  Flag dir;                // true direction of branch, set by oracle
-  Flag replayed;           // trace frontends' wrong path: dir and target were replayed, not executed (op_dir_or_pred)
+  Addr target;  // decoded target of branch, set by oracle; ADDR_INVALID if unknown (see op_oracle_known)
+  Flag dir;     // true direction of branch, set by oracle; DIR_INVALID if unknown
   Flag dcmiss;  // dcache miss has occurred
 
   Flag l1_miss;             // is this op an L1 data miss?

@@ -89,19 +89,40 @@ void process_syscall(ADDRINT ip, ADDRINT num, ADDRINT arg0, ADDRINT arg1,
     checkpoints.get_tail().init(uid_ctr, false, on_wrongpath,
                                 on_wrongpath_nop_mode, next_eip, 0);
 #ifndef ASSUME_PERFECT
-    save_context(ctxt);
+    save_context(ctxt, CTXT_PRE);
 #endif
     // Because syscalls uniquely are sent to scarab BEFORE their execution,
     // we do NOT update the global uid_ctr until the syscall compressed_op
     // is actually created and buffered for sending.
 
-    main_loop(ctxt);
-    finish_before_ins_all(ctxt, true);
+    main_loop();
+    finish_before_ins_all(true);
   }
 }
 
-void save_context(const CONTEXT* ctxt) {
+void save_context(const CONTEXT* ctxt, CtxtKind kind) {
   PIN_SaveContext(ctxt, &checkpoints.get_tail().ctxt);
+  checkpoints.get_tail().ctxt_kind = kind;
+}
+
+void save_branch_context(const CONTEXT* ctxt) {
+  if (fast_forward_count)
+    return;
+  ASSERTM(0, checkpoints.get_tail().uid == uid_ctr - 1, "Branch checkpoint is not the tail (uid=%" PRIu64 ")\n",
+          uid_ctr);
+#ifndef ASSUME_PERFECT
+  save_context(ctxt, CTXT_POST);
+#endif
+}
+
+ADDRINT rightpath_exc_pending() {
+  return !fast_forward_count && seen_rightpath_exc_mode;
+}
+
+void handle_rightpath_exc(const CONTEXT* ctxt) {
+  add_right_path_exec_br(ctxt);
+  seen_rightpath_exc_mode = false;
+  saved_excp_eip = 0;
 }
 
 void check_if_region_written_to(ADDRINT write_addr) {
@@ -173,15 +194,22 @@ void save_mem(ADDRINT write_addr, UINT32 write_size, UINT write_index) {
 #endif
 }
 
-void finish_before_ins_all(const CONTEXT* ctxt, bool from_syscall) {
+void finish_before_ins_all(bool from_syscall) {
   entered_wpnm = false;
+  // Entered WPNM in its own analysis call (e.g. a wrong-path store to an unwritten page): it never
+  // executes, so recovering to it resumes in WPNM.
+  ProcState& tail = checkpoints.get_tail();
+  if (on_wrongpath_nop_mode && !tail.wrongpath_nop_mode && tail.ctxt_kind == CTXT_NONE) {
+    tail.wrongpath_nop_mode = true;
+    tail.wpnm_eip = ADDR_MASK(next_eip);
+  }
   while(on_wrongpath_nop_mode) {
     entered_wpnm = true;
     DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
               "WPNM Curr uid=%" PRIu64 ", wrongpath=%d\n", uid_ctr,
               on_wrongpath);
     generate_dummy_nops = true;
-    main_loop(ctxt);
+    main_loop();
     if(!wpnm_skip_ckp) {
       next_eip = ADDR_MASK(next_eip);
 
@@ -189,9 +217,6 @@ void finish_before_ins_all(const CONTEXT* ctxt, bool from_syscall) {
       checkpoints.get_tail().init(uid_ctr, false, on_wrongpath,
                                   on_wrongpath_nop_mode, next_eip, 0);
       uid_ctr++;
-      save_context(ctxt);
-      PIN_SetContextRegval(&(checkpoints.get_tail().ctxt), REG_INST_PTR,
-                           (const UINT8*)(&next_eip));
       next_eip = ADDR_MASK(next_eip + DUMMY_NOP_SIZE);
     }
     wpnm_skip_ckp = false;
@@ -230,7 +255,7 @@ void add_right_path_exec_br(const CONTEXT* ctxt) {
                               on_wrongpath_nop_mode, next_eip, 0);
   uid_ctr++;
 #ifndef ASSUME_PERFECT
-  save_context(ctxt);
+  save_context(ctxt, CTXT_POST);
 #endif
 }
 
@@ -249,13 +274,7 @@ void after_ins_restage_op(ADDRINT iaddr) {
 
 void before_ins_no_mem(const CONTEXT* ctxt) {
   if(!fast_forward_count) {
-    if(seen_rightpath_exc_mode) {
-      add_right_path_exec_br(ctxt);
-      seen_rightpath_exc_mode = false;
-      saved_excp_eip          = 0;
-    }
-
-    main_loop(ctxt);
+    main_loop();
 
     next_eip = ADDR_MASK(next_eip);
 
@@ -264,22 +283,17 @@ void before_ins_no_mem(const CONTEXT* ctxt) {
                                 on_wrongpath_nop_mode, next_eip, 0);
     uid_ctr++;
 #ifndef ASSUME_PERFECT
-    save_context(ctxt);
+    if (ctxt)
+      save_context(ctxt, CTXT_PRE);
 #endif
-    finish_before_ins_all(ctxt, false);
+    finish_before_ins_all(false);
   }
 }
 
 void before_ins_one_mem(const CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_size) {
   write_addr = ADDR_MASK(write_addr);
   if(!fast_forward_count) {
-    if(seen_rightpath_exc_mode) {
-      add_right_path_exec_br(ctxt);
-      seen_rightpath_exc_mode = false;
-      saved_excp_eip          = 0;
-    }
-
-    main_loop(ctxt);
+    main_loop();
 
     next_eip = ADDR_MASK(next_eip);
 
@@ -288,22 +302,18 @@ void before_ins_one_mem(const CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_si
                                 on_wrongpath_nop_mode, next_eip, 1);
     uid_ctr++;
 #ifndef ASSUME_PERFECT
-    save_context(ctxt);
+    if (ctxt)
+      save_context(ctxt, CTXT_PRE);
 #endif
     save_mem(write_addr, write_size, 0);
-    finish_before_ins_all(ctxt, false);
+    finish_before_ins_all(false);
   }
 }
 
-void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_access_info_from_pin, bool is_scatter) {
+void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_access_info_from_pin, bool is_scatter,
+                          bool save_ctxt) {
   if(!fast_forward_count) {
-    if(seen_rightpath_exc_mode) {
-      add_right_path_exec_br(ctxt);
-      seen_rightpath_exc_mode = false;
-      saved_excp_eip          = 0;
-    }
-
-    main_loop(ctxt);
+    main_loop();
 
     next_eip = ADDR_MASK(next_eip);
 
@@ -329,7 +339,8 @@ void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_ac
                                 on_wrongpath_nop_mode, next_eip, numMemOps);
     uid_ctr++;
 #ifndef ASSUME_PERFECT
-    save_context(ctxt);
+    if (save_ctxt)
+      save_context(ctxt, CTXT_PRE);
 #endif
     for(UINT32 i = 0; i < numMemOps; i++) {
       ADDRINT write_addr;
@@ -348,7 +359,7 @@ void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_ac
 
       save_mem(write_addr, write_size, i);
     }
-    finish_before_ins_all(ctxt, false);
+    finish_before_ins_all(false);
   }
 }
 
@@ -407,7 +418,7 @@ void logging(ADDRINT n_eip, ADDRINT curr_eip, BOOL check_next_addr,
   }
 }
 
-void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, const CONTEXT* ctxt) {
+void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size) {
   read_addr = ADDR_MASK(read_addr);
   if(!fast_forward_count) {
     ASSERTM(0, read_size <= 8,

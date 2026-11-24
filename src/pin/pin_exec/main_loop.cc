@@ -38,6 +38,7 @@ void undo_mem(const ProcState& undo_state) {
 void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
                                 bool enter_ff) {
   INT64 idx = checkpoints.get_tail_index();
+  bool redirect_ctxt_found = false;
 
   scarab_clear_all_buffers();
 
@@ -52,13 +53,26 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
       on_wrongpath          = checkpoints[idx].wrongpath;
       on_wrongpath_nop_mode = checkpoints[idx].wrongpath_nop_mode;
       generate_dummy_nops   = (generate_dummy_nops && on_wrongpath_nop_mode);
+      // A branch's POST context already includes its own execution (and memory writes):
+      // redirect from it, or resume after it without re-executing it.
+      const bool post = checkpoints[idx].ctxt_kind == CTXT_POST;
+      if (post && !on_wrongpath_nop_mode)
+        PIN_SaveContext(&(checkpoints[idx].ctxt), &last_ctxt);
       if(is_redirect_recover) {
+        ASSERTM(0, post || on_wrongpath_nop_mode || redirect_ctxt_found,
+                "Redirect: no context after uid %" PRIu64 " (wrongpath=%d, ctxt_kind=%d, wpnm_eip=%" PRIx64 ")\n", uid,
+                on_wrongpath, checkpoints[idx].ctxt_kind, (uint64_t)checkpoints[idx].wpnm_eip);
         return;
+      } else if (post && !on_wrongpath_nop_mode) {
+        ASSERTM(0, enter_ff, "Recover before uid %" PRIu64 " needs a pre-execution context\n", uid);
+        PIN_ExecuteAt(&last_ctxt);
+        ASSERTM(0, false, "PIN_ExecuteAt did not redirect execution.\n");
       } else {
         undo_mem(checkpoints[idx]);
-        PIN_SaveContext(&(checkpoints[idx].ctxt), &last_ctxt);
 
         if(!on_wrongpath_nop_mode) {
+          ASSERTM(0, checkpoints[idx].ctxt_kind == CTXT_PRE, "Recover: no context for uid %" PRIu64 "\n", uid);
+          PIN_SaveContext(&(checkpoints[idx].ctxt), &last_ctxt);
           if(enter_ff) {
             excp_ff = true;
             fast_forward_count += 2;
@@ -69,8 +83,9 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
           PIN_ExecuteAt(&last_ctxt);
           ASSERTM(0, false, "PIN_ExecuteAt did not redirect execution.\n");
         } else {
-          ADDRINT prev_eip;
-          PIN_GetContextRegval(&last_ctxt, REG_INST_PTR, (UINT8*)&prev_eip);
+          ADDRINT prev_eip = checkpoints[idx].wpnm_eip;
+          if (checkpoints[idx].ctxt_kind == CTXT_PRE)
+            PIN_GetContextRegval(&(checkpoints[idx].ctxt), REG_INST_PTR, (UINT8*)&prev_eip);
           this_eip = checkpoints[idx].wpnm_eip;
           next_eip = ADDR_MASK(enter_ff ? this_eip : prev_eip);
           return;
@@ -82,8 +97,9 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
 
     undo_mem(checkpoints[idx]);
 
-    if(is_redirect_recover && (checkpoints[idx].uid == (uid + 1))) {
+    if (is_redirect_recover && checkpoints[idx].uid == uid + 1 && checkpoints[idx].ctxt_kind == CTXT_PRE) {
       PIN_SaveContext(&(checkpoints[idx].ctxt), &last_ctxt);
+      redirect_ctxt_found = true;
     }
 
     idx = checkpoints.remove_from_cir_buf_tail();
@@ -91,8 +107,7 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
   ASSERTM(0, false, "Checkpoint %" PRIu64 " not found. \n", uid);
 }
 
-void redirect_to_inst(ADDRINT inst_addr, const CONTEXT* ctxt, UINT64 uid) {
-  PIN_SaveContext(ctxt, &last_ctxt);
+void redirect_to_inst(ADDRINT inst_addr, UINT64 uid) {
   recover_to_past_checkpoint(uid, true, false);
   scarab_clear_all_buffers();
   PIN_SetContextRegval(&last_ctxt, REG_INST_PTR, (const UINT8*)(&inst_addr));
@@ -140,7 +155,7 @@ void retire_older_checkpoints(UINT64 uid) {
   ASSERTM(0, found_uid, "Checkpoint %" PRIu64 " not found. \n", uid);
 }
 
-bool do_fe_recover(Scarab_To_Pin_Msg& cmd, const CONTEXT* ctxt) {
+bool do_fe_recover(Scarab_To_Pin_Msg& cmd) {
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "recover curr_uid=%" PRIu64 ", target_uid=%" PRIu64 "\n", uid_ctr,
             cmd.inst_uid);
@@ -161,7 +176,6 @@ bool do_fe_recover(Scarab_To_Pin_Msg& cmd, const CONTEXT* ctxt) {
   } else {
     ASSERTM(0, false, "Unknown Recover Type (uid=%" PRIu64 ")\n", uid_ctr - 1);
   }
-  PIN_SaveContext(ctxt, &last_ctxt);
   recover_to_past_checkpoint(cmd.inst_uid, false, enter_ff);
   if(on_wrongpath_nop_mode) {
     wpnm_skip_ckp = true;
@@ -173,7 +187,7 @@ bool do_fe_recover(Scarab_To_Pin_Msg& cmd, const CONTEXT* ctxt) {
   return on_wrongpath_nop_mode;
 }
 
-bool do_fe_redirect(Scarab_To_Pin_Msg& cmd, const CONTEXT* ctxt) {
+bool do_fe_redirect(Scarab_To_Pin_Msg& cmd) {
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "redirect curr_uid=%" PRIu64 ", target_uid=%" PRIu64
             ", target_eip=%llx\n",
@@ -187,7 +201,7 @@ bool do_fe_redirect(Scarab_To_Pin_Msg& cmd, const CONTEXT* ctxt) {
   pending_syscall         = false;
   pending_exception       = false;
   buffer_sentinel         = false;
-  redirect_to_inst(cmd.inst_addr, ctxt, cmd.inst_uid);
+  redirect_to_inst(cmd.inst_addr, cmd.inst_uid);
   if(on_wrongpath_nop_mode) {
     if(entered_wpnm) {
       wpnm_skip_ckp = true;
@@ -202,7 +216,7 @@ bool do_fe_redirect(Scarab_To_Pin_Msg& cmd, const CONTEXT* ctxt) {
 
 }  // namespace
 
-void main_loop(const CONTEXT* ctxt) {
+void main_loop() {
   bool buffer_ready                    = false;
   bool syscall_has_been_sent_to_scarab = false;
   bool have_consumed_op                = false;
@@ -222,11 +236,11 @@ void main_loop(const CONTEXT* ctxt) {
     }
 
     if(cmd.type == FE_RECOVER_BEFORE || cmd.type == FE_RECOVER_AFTER) {
-      if(do_fe_recover(cmd, ctxt)) {
+      if (do_fe_recover(cmd)) {
         break;
       }
     } else if(cmd.type == FE_REDIRECT) {
-      if(do_fe_redirect(cmd, ctxt)) {
+      if (do_fe_redirect(cmd)) {
         break;
       }
     } else if(cmd.type == FE_RETIRE) {

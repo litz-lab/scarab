@@ -104,6 +104,11 @@ KNOB<UINT64> KnobDebugPrintEndUid(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<UINT64> KnobStartRip(KNOB_MODE_WRITEONCE, "pintool", "rip", "0",
                           "the starting rip of the program");
 
+KNOB<bool> KnobCheckpointMemOps(
+    KNOB_MODE_WRITEONCE, "pintool", "checkpoint_mem_ops", "false",
+    "Also checkpoint the context before memory instructions, so scarab can "
+    "recover to them (e.g. load speculation); by default only branches are recovery points");
+
 KNOB<bool> KnobTrackAtInstrumentation(KNOB_MODE_WRITEONCE, "pintool", "track_at_instr", "true",
                                       "Track RIP at instrumentation time instead of execution time");
 
@@ -232,7 +237,7 @@ void insert_processing_for_syscalls(const INS& ins) {
 void insert_checks_for_control_flow(const INS& ins) {
   if(INS_IsRet(ins)) {
     INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_ret_control_ins), IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE,
-                   IARG_CONST_CONTEXT, IARG_END);
+                   IARG_END);
   } else if(INS_IsBranchOrCall(ins)) {
     if(INS_IsDirectBranchOrCall(ins)) {
       if(INS_Category(ins) == XED_CATEGORY_COND_BR) {
@@ -262,18 +267,39 @@ void insert_checks_for_control_flow(const INS& ins) {
 }
 
 void insert_processing_for_nonsyscall_instructions(const INS& ins) {
+  // the dummy jump after a right-path exception checkpoints the live context
+  INS_InsertIfCall(ins, IPOINT_BEFORE, (AFUNPTR)rightpath_exc_pending, IARG_END);
+  INS_InsertThenCall(ins, IPOINT_BEFORE, (AFUNPTR)handle_rightpath_exc, IARG_CONST_CONTEXT, IARG_END);
+
+  // Only branches are recovery points: they checkpoint the context after they execute.
+  const bool save_ctxt = KnobCheckpointMemOps.Value() && (INS_IsMemoryRead(ins) || INS_IsMemoryWrite(ins));
+  IARGLIST ctxt_arg = IARGLIST_Alloc();
+  if (save_ctxt)
+    IARGLIST_AddArguments(ctxt_arg, IARG_CONST_CONTEXT, IARG_END);
+  else
+    IARGLIST_AddArguments(ctxt_arg, IARG_PTR, nullptr, IARG_END);
+
   if(!INS_IsMemoryWrite(ins)) {
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_no_mem, IARG_CONST_CONTEXT, IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_no_mem, IARG_IARGLIST, ctxt_arg, IARG_END);
   } else {
     if (!INS_HasScatteredMemoryAccess(ins)) {
       // Single memory op (known size); scatter/gather -> multi-mem path below
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_one_mem, IARG_CONST_CONTEXT, IARG_MEMORYWRITE_EA,
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_one_mem, IARG_IARGLIST, ctxt_arg, IARG_MEMORYWRITE_EA,
                      IARG_MEMORYWRITE_SIZE, IARG_END);
     } else {
-      // Multiple memory ops
+      // Multiple memory ops; the context is also needed for the scatter mask
       INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_multi_mem, IARG_CONST_CONTEXT, IARG_MULTI_MEMORYACCESS_EA,
-                     IARG_BOOL, INS_IsVscatter(ins), IARG_END);
+                     IARG_BOOL, INS_IsVscatter(ins), IARG_BOOL, save_ctxt, IARG_END);
     }
+  }
+  IARGLIST_Free(ctxt_arg);
+
+  // scarab control flow: branches, calls, rets, and REP string ops (CF_REP, one uid per iteration)
+  if (INS_IsRet(ins) || INS_IsBranchOrCall(ins) || INS_HasRealRep(ins)) {
+    if (INS_IsValidForIpointAfter(ins))
+      INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)save_branch_context, IARG_CONST_CONTEXT, IARG_END);
+    if (INS_IsValidForIpointTakenBranch(ins))
+      INS_InsertCall(ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)save_branch_context, IARG_CONST_CONTEXT, IARG_END);
   }
 }
 

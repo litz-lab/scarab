@@ -292,29 +292,39 @@ static inline Op* op_inst_uop(const Op* op, uns i) {
   ASSERT(op->proc_id, op->dyn_inst && i < op->uop->num_uop);
   return op->dyn_inst->uops[i];
 }
-/* The trace frontends replay a wrong-path op's outcome from the last on-path instance of its instruction. A
-   conditional branch's direction and an indirect branch's target replayed that way are not outcomes; where the
-   wrong path needs one, the prediction stands in. */
-static inline Flag op_dir_replayed(const Op* op) {
-  return op->oracle_info.replayed && (op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP);
-}
-
-static inline Flag op_target_replayed(const Op* op) {
-  Cf_Type cf = op->uop->cf_type;
-  return op->oracle_info.replayed && (cf == CF_IBR || cf == CF_ICALL || cf == CF_ICO || cf == CF_RET);
-}
-
-static inline Flag op_dir_or_pred(const Op* op, Flag pred) {
-  return op_dir_replayed(op) ? pred : op->oracle_info.dir;
-}
-
-static inline Addr op_target_or_pred(const Op* op, Addr pred_target) {
-  return op_target_replayed(op) ? pred_target : op->oracle_info.target;
-}
-
 static inline Op* op_inst_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
   return op->dyn_inst->uops[op->uop->num_uop - 1];
+}
+
+/* The trace frontends cannot know a wrong-path branch's outcome: a conditional branch gets
+   oracle_info.dir = DIR_INVALID, an indirect one oracle_info.target = ADDR_INVALID, and both
+   oracle_info.npc = ADDR_INVALID. Where the wrong path needs an outcome, the prediction stands in.
+   (A conditional branch's ADDR_INVALID target means its static target is not known yet.) */
+static inline Flag cf_is_indirect(Cf_Type cf) {
+  return cf == CF_IBR || cf == CF_ICALL || cf == CF_ICO || cf == CF_RET;
+}
+
+static inline Flag op_target_unknown(const Op* op) {
+  return cf_is_indirect(op->uop->cf_type) && op->oracle_info.target == ADDR_INVALID;
+}
+
+static inline Flag op_oracle_known(const Op* op) {
+  return op->oracle_info.dir != DIR_INVALID && !op_target_unknown(op);
+}
+
+static inline Flag op_dir_or_pred(const Op* op, Flag pred) {
+  if (op->oracle_info.dir != DIR_INVALID)
+    return op->oracle_info.dir;
+  ASSERT(op->proc_id, op->off_path);
+  return pred;
+}
+
+static inline Addr op_target_or_pred(const Op* op, Addr pred_target) {
+  if (!op_target_unknown(op))
+    return op->oracle_info.target;
+  ASSERT(op->proc_id, op->off_path);
+  return pred_target;
 }
 
 static inline Counter op_get_fetch_cycle(const Op* op) {

@@ -536,6 +536,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       bp_pred_info->pred_global_hist = bp_data->global_hist;
 
       if (PERFECT_BP) {
+        ASSERT(op->proc_id, op->oracle_info.dir != DIR_INVALID);
         bp_pred_info->pred = op->oracle_info.dir;
         bp_pred_info->pred_orig = op->oracle_info.dir;
       } else {
@@ -555,12 +556,20 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         pred_target = pc_plus_offset;
       }
 
+      // Unknown outcome (trace frontends' wrong path): nothing is known to be mispredicted
+      if (op->oracle_info.dir == DIR_INVALID) {
+        ASSERT(op->proc_id, op->off_path);
+        if (!btb_hit)
+          bp_pred_info->pred = NOT_TAKEN;
+        bp_pred_info->recovery_point = RECOVER_AT_NONE;
+        bp_pred_info->pred_npc = btb_hit ? pred_target : pc_plus_offset;
+      }
       // Regular mispredict resolved at exec
       // On dir misprediction, treat as correctly predicted if fall-through happens to match target
-      if (btb_hit &&
-          ((op->oracle_info.dir == TAKEN && bp_pred_info->pred == NOT_TAKEN &&
-            pc_plus_offset != op->oracle_info.target) ||
-           (op->oracle_info.dir == NOT_TAKEN && bp_pred_info->pred == TAKEN && pred_target != pc_plus_offset))) {
+      else if (btb_hit &&
+               ((op->oracle_info.dir == TAKEN && bp_pred_info->pred == NOT_TAKEN &&
+                 pc_plus_offset != op->oracle_info.target) ||
+                (op->oracle_info.dir == NOT_TAKEN && bp_pred_info->pred == TAKEN && pred_target != pc_plus_offset))) {
         bp_pred_info->recovery_point = RECOVER_AT_EXEC;
         bp_pred_info->pred_npc = pred_target;
 
@@ -668,9 +677,21 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         bp_pred_info->pred = TAKEN;
         bp_pred_info->pred_orig = TAKEN;
       }
+      // Unknown target (trace frontends' wrong path): nothing is known to be mispredicted; fetch follows
+      // the iBTB/BTB target only on a BTB hit
+      if (op_target_unknown(op)) {
+        ASSERT(op->proc_id, op->off_path);
+        bp_pred_info->recovery_point = RECOVER_AT_NONE;
+        if (btb_hit) {
+          bp_pred_info->pred_npc = pred_target;
+        } else {
+          bp_pred_info->pred = NOT_TAKEN;
+          bp_pred_info->pred_npc = pc_plus_offset;
+        }
+      }
       // Fetch knows the branch is indirect only from a BTB entry; without one it falls through and decode
       // redirects to a correct iBTB target.
-      if (ibp_hit && !btb_hit) {
+      else if (ibp_hit && !btb_hit) {
         bp_pred_info->pred = NOT_TAKEN;
         bp_pred_info->pred_npc = pc_plus_offset;
         if (op->oracle_info.target == pred_target) {
@@ -725,9 +746,21 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       if (crs_owner)
         CRS_REALISTIC ? bp_crs_realistic_push(bp_data, op) : bp_crs_push(bp_data, op);
 
+      // Unknown target (trace frontends' wrong path): nothing is known to be mispredicted; fetch follows
+      // the iBTB/BTB target only on a BTB hit
+      if (op_target_unknown(op)) {
+        ASSERT(op->proc_id, op->off_path);
+        bp_pred_info->recovery_point = RECOVER_AT_NONE;
+        if (btb_hit) {
+          bp_pred_info->pred_npc = pred_target;
+        } else {
+          bp_pred_info->pred = NOT_TAKEN;
+          bp_pred_info->pred_npc = pc_plus_offset;
+        }
+      }
       // Fetch knows the branch is indirect only from a BTB entry; without one it falls through and decode
       // redirects to a correct iBTB target.
-      if (ibp_hit && !btb_hit) {
+      else if (ibp_hit && !btb_hit) {
         bp_pred_info->pred = NOT_TAKEN;
         bp_pred_info->pred_npc = pc_plus_offset;
         if (op->oracle_info.target == pred_target) {
@@ -781,7 +814,16 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       } else if (crs_reuse)
         pred_target = op->bp_pred_l0.crs_target;
 
-      if (pred_target != op->oracle_info.npc) {
+      if (op_target_unknown(op)) {  // trace frontends' wrong path
+        ASSERT(op->proc_id, op->off_path);
+        bp_pred_info->recovery_point = RECOVER_AT_NONE;
+        if (pred_target) {
+          bp_pred_info->pred_npc = pred_target;
+        } else {
+          bp_pred_info->pred = NOT_TAKEN;
+          bp_pred_info->pred_npc = pc_plus_offset;
+        }
+      } else if (pred_target != op->oracle_info.npc) {
         bp_pred_info->recovery_point = RECOVER_AT_EXEC;
         bp_pred_info->pred_npc = pred_target;
         STAT_EVENT_BP_SPLIT_PATH(op, ICO_RECOVER);
@@ -808,8 +850,20 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       } else if (crs_reuse)
         pred_target = op->bp_pred_l0.crs_target;
 
+      // Unknown target (trace frontends' wrong path): follow the return stack (or the BTB on underflow)
+      // if the BTB holds the return, else fall through
+      if (op_target_unknown(op)) {
+        ASSERT(op->proc_id, op->off_path);
+        bp_pred_info->recovery_point = RECOVER_AT_NONE;
+        if (btb_hit) {
+          bp_pred_info->pred_npc = pred_target ? pred_target : op->btb_pred_info->pred_target;
+        } else {
+          bp_pred_info->pred = NOT_TAKEN;
+          bp_pred_info->pred_npc = pc_plus_offset;
+        }
+      }
       // Return-stack underflow: a BTB entry supplies the target; without one, fall through.
-      if (pred_target == 0) {  // RAS Underflow
+      else if (pred_target == 0) {  // RAS Underflow
         if (btb_hit) {
           bp_pred_info->pred_npc = op->btb_pred_info->pred_target;  // fall back to BTB's target
           if (op->btb_pred_info->pred_target == op->oracle_info.npc) {
@@ -896,7 +950,7 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
         op->btb_pred_info->no_target, op->oracle_info.dir, bp_pred_info->pred, pc_plus_offset, op->oracle_info.target);
 
   ASSERT(op->proc_id, bp_pred_info->pred_npc);
-  if (op->oracle_info.dir != bp_pred_info->pred &&
+  if (op_oracle_known(op) && op->oracle_info.dir != bp_pred_info->pred &&
       ((bp_pred_info->pred == TAKEN && pred_target != pc_plus_offset) ||
        (bp_pred_info->pred == NOT_TAKEN && pc_plus_offset != op->oracle_info.target))) {
     ASSERT(op->proc_id, bp_pred_info->recovery_point != RECOVER_AT_NONE);
@@ -993,15 +1047,20 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   ASSERT(bp_data->proc_id, op->uop->cf_type);
 
-  if (op->uop->cf_type != CF_SYS)
-    bp_data->bp_btb->update_func(bp_data, op);
+  // Decode writes a conditional branch it predicts taken (it resteers there on a BTB miss), on either path;
+  // one predicted not-taken that resolves taken is written in bp_resolve_op.
+  Cf_Type cf = op->uop->cf_type;
+  if (cf != CF_SYS)
+    bp_data->bp_btb->update_func(bp_data, op,
+                                 cf == CF_CBR || cf == CF_REP ? op->bp_pred_info->pred_orig : op->oracle_info.dir);
 
   // special case updates
   switch (op->uop->cf_type) {
     case CF_ICALL:  // fall through
     case CF_IBR:
       if (ENABLE_IBP) {
-        if (IBTB_OFF_PATH_WRITES || !op->off_path) {
+        // an unknown wrong-path target (trace frontends) trains nothing
+        if ((IBTB_OFF_PATH_WRITES || !op->off_path) && !op_target_unknown(op)) {
           bp_data->bp_ibtb->update_func(bp_data, op);
         }
       }
@@ -1015,10 +1074,14 @@ void bp_target_known_op(Bp_Data* bp_data, Op* op) {
 /* bp_resolve_op: called on cf ops when they complete in the functional unit */
 
 void bp_resolve_op(Bp_Data* bp_data, Op* op) {
-  // a replayed wrong-path outcome (trace frontends) trains nothing
-  if (op->off_path && (!UPDATE_BP_OFF_PATH || op_dir_replayed(op) || op_target_replayed(op))) {
+  // an unknown wrong-path outcome (trace frontends) trains nothing
+  if (op->off_path && (!UPDATE_BP_OFF_PATH || !op_oracle_known(op))) {
     return;
   }
+  ASSERT(op->proc_id, op_oracle_known(op));
+  if ((op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) && op->oracle_info.dir == TAKEN &&
+      op->bp_pred_info->pred_orig != TAKEN)
+    bp_data->bp_btb->update_func(bp_data, op, TAKEN);
   // Always train both predictors regardless of which one made the active prediction.
   op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
   bp_data->bp->update_func(op, BP_PRED_MAIN);
@@ -1038,6 +1101,7 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
  */
 
 void bp_retire_op(Bp_Data* bp_data, Op* op) {
+  ASSERT(op->proc_id, op_oracle_known(op));
   // Always retire both predictors regardless of which one made the active prediction.
   op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;
   bp_data->bp->retire_func(op);

@@ -980,10 +980,14 @@ void update_memory() {
    copies and the capacity that exclusivity buys is lost. The dirty bit travels with
    the line via req->dirty_l0, which dcache_fill_line() applies to the new copy. A
    dirty line promoted to the icache has nowhere to carry it, so that copy is kept. */
+static inline Flag promote_keeps_dirty_copy(Mem_Req* req, Flag dirty) {
+  return dirty && (req->type == MRT_IFETCH || req->type == MRT_IPRF || req->destination == DEST_ICACHE);
+}
+
 static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag dirty, Stat_Enum inval_stat) {
   if (!EXCLUSIVE_CACHES || !EXCLUSIVE_PROMOTE_INVALIDATE)
     return;
-  if (dirty && (req->type == MRT_IFETCH || req->type == MRT_IPRF || req->destination == DEST_ICACHE)) {
+  if (promote_keeps_dirty_copy(req, dirty)) {
     STAT_EVENT(req->proc_id, EXCL_PROMOTE_KEPT_DIRTY);
     return;
   }
@@ -1147,6 +1151,15 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
 /* FALSE when the done_func refused the line; the lookup is retried next cycle. */
 
 Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, int lru_position) {
+  /* done_func is the dcache fill, and it applies req->dirty_l0 to the new copy, so a promotion
+     must put the MLC line's dirty bit on the request before done_func runs: set only by
+     mem_invalidate_on_promote below, it came too late, the dcache got a clean copy, the dirty
+     MLC copy was invalidated, and the write was lost. Undone if done_func refuses the line,
+     which then stays in the MLC for the retry. */
+  Flag old_dirty_l0 = req->dirty_l0;
+  if (data && EXCLUSIVE_CACHES && EXCLUSIVE_PROMOTE_INVALIDATE && req->destination < DEST_MLC && req->type != MRT_WB &&
+      req->type != MRT_WB_NODIRTY && !promote_keeps_dirty_copy(req, data->dirty))
+    req->dirty_l0 |= data->dirty;
   if (!req->done_func || req->done_func(req)) {
     /* If done_func is not complete we will keep accessing MLC until done_func returns TRUE */
 
@@ -1217,6 +1230,7 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, i
 
     return TRUE;
   } else {
+    req->dirty_l0 = old_dirty_l0;
     return FALSE;
   }
 }

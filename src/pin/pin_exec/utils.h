@@ -100,11 +100,20 @@ struct MemState {
   }
 };
 
+// PRE: before the instruction executes (syscalls, mem ops with checkpoint_mem_ops).
+// POST: after a branch executes, the state redirects and recoveries resume from.
+enum CtxtKind {
+  CTXT_NONE,
+  CTXT_PRE,
+  CTXT_POST
+};
+
 struct ProcState {
   UINT64 uid = 0;
   MemState* mem_state_list = NULL;
   UINT num_mem_state = 0;
   CONTEXT ctxt = {};
+  CtxtKind ctxt_kind = CTXT_NONE;
   bool unretireable_instruction = false;
   bool wrongpath = false;
   bool wrongpath_nop_mode = false;
@@ -119,6 +128,7 @@ struct ProcState {
     wrongpath                = _wrongpath;
     wrongpath_nop_mode       = _wrongpath_nop_mode;
     wpnm_eip                 = _wpnm_eip;
+    ctxt_kind = CTXT_NONE;
 
     if(_num_mem_state > num_mem_state) {
       delete[] mem_state_list;

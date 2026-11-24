@@ -30,7 +30,13 @@ void process_syscall(ADDRINT ip, ADDRINT num, ADDRINT arg0, ADDRINT arg1,
                      ADDRINT arg2, ADDRINT arg3, ADDRINT arg4, ADDRINT arg5,
                      CONTEXT* ctxt, bool real_syscall);
 
-void save_context(const CONTEXT* ctxt);
+void save_context(const CONTEXT* ctxt, CtxtKind kind);
+
+void save_branch_context(const CONTEXT* ctxt);
+
+ADDRINT rightpath_exc_pending();
+
+void handle_rightpath_exc(const CONTEXT* ctxt);
 
 void check_if_region_written_to(ADDRINT write_addr);
 
@@ -38,7 +44,7 @@ void save_mem(ADDRINT write_addr, UINT32 write_size, UINT write_index);
 
 void undo_mem(const ProcState& undo_state);
 
-void finish_before_ins_all(const CONTEXT* ctxt, bool from_syscall);
+void finish_before_ins_all(bool from_syscall);
 
 void add_right_path_exec_br(const CONTEXT* ctxt);
 
@@ -47,13 +53,14 @@ void before_ins_no_mem(const CONTEXT* ctxt);
 
 void before_ins_one_mem(const CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_size);
 
-void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_access_info_from_pin, bool is_scatter);
+void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_access_info_from_pin, bool is_scatter,
+                          bool save_ctxt);
 
 void redirect(CONTEXT* ctx);
 
 void logging(ADDRINT n_eip, ADDRINT curr_eip, BOOL check_next_addr, BOOL taken);
 
-void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, const CONTEXT* ctxt);
+void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size);
 
 void check_nonret_control_ins(BOOL taken, ADDRINT target_addr);
 

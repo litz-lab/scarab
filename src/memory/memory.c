@@ -704,6 +704,13 @@ static inline Flag mem_req_type_is_inst(Mem_Req_Type type) {
          type == MRT_FDIPPRFOFF || type == MRT_FDIPPRFALT;
 }
 
+/* Whether the MLC is exclusive of the first-level cache a request of this type is bound
+   for: the icache for an instruction type, the dcache otherwise. A writeback counts as
+   data, which changes nothing: the MLC inserts a writeback either way. */
+static inline Flag mem_exclusive_mlc_for(Mem_Req_Type type) {
+  return mem_req_type_is_inst(type) ? mem_exclusive_mlc_icache() : mem_exclusive_mlc_dcache();
+}
+
 /* The file a miss below the core enters: the icache's or the dcache's, each waiting at
    the MLC; with no MLC both go to the LLC's. */
 Mshr* mem_core_file(uns8 proc_id, Mem_Req_Type type) {
@@ -976,16 +983,18 @@ void update_memory() {
 /**************************************************************************************/
 /* mem_start_l1_access: */
 
-/* Exclusive hierarchy: a promoted line must not stay behind, or a hit leaves two
-   copies and the capacity that exclusivity buys is lost. The dirty bit travels with
-   the line via req->dirty_l0, which dcache_fill_line() applies to the new copy. A
-   dirty line promoted to the icache has nowhere to carry it, so that copy is kept. */
+/* Exclusive level: a line promoted out of it must not stay behind, or a hit leaves two
+   copies and the capacity that exclusivity buys is lost. `exclusive` is whether the
+   level that hit is. The dirty bit travels with the line via req->dirty_l0, which
+   dcache_fill_line() applies to the new copy. A dirty line promoted to the icache has
+   nowhere to carry it, so that copy is kept. */
 static inline Flag promote_keeps_dirty_copy(Mem_Req* req, Flag dirty) {
   return dirty && (req->type == MRT_IFETCH || req->type == MRT_IPRF || req->destination == DEST_ICACHE);
 }
 
-static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag dirty, Stat_Enum inval_stat) {
-  if (!EXCLUSIVE_CACHES || !EXCLUSIVE_PROMOTE_INVALIDATE)
+static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag exclusive, Flag dirty,
+                                             Stat_Enum inval_stat) {
+  if (!exclusive || !EXCLUSIVE_PROMOTE_INVALIDATE)
     return;
   if (promote_keeps_dirty_copy(req, dirty)) {
     STAT_EVENT(req->proc_id, EXCL_PROMOTE_KEPT_DIRTY);
@@ -997,23 +1006,23 @@ static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag di
   STAT_EVENT(req->proc_id, inval_stat);
 }
 
-/* Which levels a fill will actually insert into. An exclusive hierarchy keeps the
-   line only at the level that asked for it, so l1_fill_line and mlc_fill_line refuse
-   anything destined elsewhere; routing a fill through such a level costs a queue hop
-   and buys nothing. */
+/* Which levels a fill will actually insert into. An exclusive level keeps only the
+   lines that asked for it, so l1_fill_line and mlc_fill_line refuse anything destined
+   elsewhere when their level is exclusive; routing a fill through such a level costs a
+   queue hop and buys nothing. A level that is not exclusive inserts whatever reaches it. */
 /* A writeback is going down, not up; it has no requester waiting and is not subject
    to the one-level rule below. */
 static inline Flag fill_req_is_wb(Mem_Req* req) {
   return req->type == MRT_WB || req->type == MRT_WB_NODIRTY;
 }
 
-/* Under an exclusive hierarchy these three are mutually exclusive, and each one
-   knows what the others imply: a fill claimed by a cache level was asked for by that
-   level, so nothing in the core is waiting on it, and a fill that reaches the dcache
-   was asked for by the core, so something is. done_func is how a requester says it
-   is waiting, which makes it the check. */
+/* With both levels exclusive these three are mutually exclusive, and each one knows
+   what the others imply: a fill claimed by a cache level was asked for by that level,
+   so nothing in the core is waiting on it, and a fill that reaches the dcache was asked
+   for by the core, so something is. done_func is how a requester says it is waiting,
+   which makes it the check. */
 static inline Flag fill_inserts_at_l1(Mem_Req* req) {
-  if (!EXCLUSIVE_CACHES)
+  if (!mem_exclusive_l1())
     return TRUE;
   Flag at_l1 = req->destination == DEST_L1;
   if (at_l1 && !fill_req_is_wb(req))
@@ -1022,7 +1031,7 @@ static inline Flag fill_inserts_at_l1(Mem_Req* req) {
 }
 
 static inline Flag fill_inserts_at_mlc(Mem_Req* req) {
-  if (!EXCLUSIVE_CACHES)
+  if (!mem_exclusive_mlc_for(req->type))
     return TRUE;
   Flag at_mlc = req->destination == DEST_MLC;
   if (at_mlc && !fill_req_is_wb(req))
@@ -1031,9 +1040,11 @@ static inline Flag fill_inserts_at_mlc(Mem_Req* req) {
 }
 
 /* A demand carries DEST_NONE rather than DEST_DCACHE, so the dcache is not named by
-   destination -- it is whatever no lower level claimed. */
+   destination -- it is whatever no lower level claimed. Only an MLC exclusive of the
+   request's side can claim a core-bound line away from it. (An icache-bound request is
+   checked here too: done_func is its fill as well.) */
 static inline Flag fill_inserts_at_dcache(Mem_Req* req) {
-  if (!EXCLUSIVE_CACHES)
+  if (!mem_exclusive_mlc_for(req->type))
     return req->done_func != NULL;
   Flag at_dcache = req->destination != DEST_L1 && req->destination != DEST_MLC;
   if (at_dcache && !fill_req_is_wb(req))
@@ -1095,7 +1106,7 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
     data->dirty |= (req->type == MRT_WB);
     /* Above the LLC: NONE (demand), DCACHE, ICACHE or MLC all take the line away. */
     if (req->destination < DEST_L1 && req->type != MRT_WB && req->type != MRT_WB_NODIRTY)
-      mem_invalidate_on_promote(req, &L1(req->proc_id)->cache, data->dirty, EXCL_PROMOTE_INVAL_LLC);
+      mem_invalidate_on_promote(req, &L1(req->proc_id)->cache, mem_exclusive_l1(), data->dirty, EXCL_PROMOTE_INVAL_LLC);
   }
 
   DEBUG(req->proc_id, "Mem request hit in the L1  type:%s  addr:0x%s  l1_bank:%d  size:%d\n",
@@ -1157,8 +1168,8 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, i
      MLC copy was invalidated, and the write was lost. Undone if done_func refuses the line,
      which then stays in the MLC for the retry. */
   Flag old_dirty_l0 = req->dirty_l0;
-  if (data && EXCLUSIVE_CACHES && EXCLUSIVE_PROMOTE_INVALIDATE && req->destination < DEST_MLC && req->type != MRT_WB &&
-      req->type != MRT_WB_NODIRTY && !promote_keeps_dirty_copy(req, data->dirty))
+  if (data && mem_exclusive_mlc_for(req->type) && EXCLUSIVE_PROMOTE_INVALIDATE && req->destination < DEST_MLC &&
+      req->type != MRT_WB && req->type != MRT_WB_NODIRTY && !promote_keeps_dirty_copy(req, data->dirty))
     req->dirty_l0 |= data->dirty;
   if (!req->done_func || req->done_func(req)) {
     /* If done_func is not complete we will keep accessing MLC until done_func returns TRUE */
@@ -1198,7 +1209,8 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, i
       data->dirty |= (req->type == MRT_WB);
       /* Above the MLC: NONE (demand), DCACHE or ICACHE take the line away. */
       if (req->destination < DEST_MLC && req->type != MRT_WB && req->type != MRT_WB_NODIRTY)
-        mem_invalidate_on_promote(req, &MLC(req->proc_id)->cache, data->dirty, EXCL_PROMOTE_INVAL_MLC);
+        mem_invalidate_on_promote(req, &MLC(req->proc_id)->cache, mem_exclusive_mlc_for(req->type), data->dirty,
+                                  EXCL_PROMOTE_INVAL_MLC);
     }
 
     if ((req->type == MRT_DFETCH) || (req->type == MRT_DSTORE) || (req->type == MRT_IFETCH)) {
@@ -1881,8 +1893,9 @@ void mem_complete_bus_in_access(Mem_Req* req, Counter priority) {
         "size:%d  state: %s\n",
         Mem_Req_Type_str(req->type), hexstr64s(req->addr), req->size, mem_req_state_names[req->state]);
 
-  /* Exactly one level keeps the line, which is what the destination is for. */
-  ASSERT(req->proc_id, !EXCLUSIVE_CACHES || fill_req_is_wb(req) ||
+  /* With every level exclusive (on this request's side), exactly one keeps the line,
+     which is what the destination is for. */
+  ASSERT(req->proc_id, !(mem_exclusive_mlc_for(req->type) && mem_exclusive_l1()) || fill_req_is_wb(req) ||
                            fill_inserts_at_l1(req) + fill_inserts_at_mlc(req) + fill_inserts_at_dcache(req) == 1);
 
   /* A read's data, or DRAM's acknowledgement of an LLC writeback: the line left the
@@ -2913,10 +2926,11 @@ Flag l1_fill_line(Mem_Req* req) {
     l1_miss_is_satisfied(req);
     return TRUE;
   }
-  /* An LLC prefetch that missed the MLC on its way down can land after a dcache demotion
-     has put the line there. The resident copy is the newer one and sits closer to the
-     core, so drop this fill rather than make a second copy. */
-  if (EXCLUSIVE_CACHES) {
+  /* An LLC prefetch that missed the MLC on its way down can land after the line has
+     reached the MLC (a dcache demotion, or a demand fill if the MLC is not exclusive).
+     The resident copy is the newer one and sits closer to the core, so drop this fill
+     rather than make a second copy. */
+  if (mem_exclusive_l1()) {
     Addr dup_addr;
     MLC_Data* dup = (MLC_Data*)cache_access(&MLC(req->proc_id)->cache, req->addr, &dup_addr, FALSE);
     if (dup) {
@@ -3261,7 +3275,7 @@ static inline void mlc_miss_is_satisfied(Mem_Req* req) {
 }
 
 Flag mlc_fill_line(Mem_Req* req) {
-  /* Exclusive: only the destination level keeps the line; a core-destined fill
+  /* Exclusive MLC: only the destination level keeps the line; a core-destined fill
      passes through the MLC without inserting. */
   if (!fill_inserts_at_mlc(req)) {
     STAT_EVENT(req->proc_id, EXCL_FILL_SKIPPED_MLC);
@@ -3277,7 +3291,9 @@ Flag mlc_fill_line(Mem_Req* req) {
     mlc_miss_is_satisfied(req);
     return TRUE;
   }
-  if (EXCLUSIVE_CACHES) {
+  /* Exclusive LLC: a line the LLC already holds stays there rather than gaining a copy
+     here. */
+  if (mem_exclusive_l1()) {
     Addr dup_addr;
     L1_Data* dup = (L1_Data*)cache_access(&L1(req->proc_id)->cache, req->addr, &dup_addr, FALSE);
     if (dup) {
@@ -3341,8 +3357,9 @@ Flag mlc_fill_line(Mem_Req* req) {
       if (!new_mem_mlc_wb_req(MRT_WB, repl_proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))
         return FAILURE;
       STAT_EVENT(req->proc_id, MLC_FILL_DIRTY);
-    } else if (EXCLUSIVE_CACHES) {
-      /* Exclusive: a clean victim has no other copy, so it moves down too. */
+    } else if (mem_exclusive_l1()) {
+      /* Exclusive LLC: the LLC holds no copy of an MLC line, so a clean victim moves
+         down too. */
       if (!new_mem_mlc_wb_req(MRT_WB_NODIRTY, repl_proc_id, repl_line_addr, MLC_LINE_SIZE, 1, NULL, NULL, unique_count))
         return FAILURE;
     }

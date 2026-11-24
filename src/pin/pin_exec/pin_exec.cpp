@@ -426,6 +426,25 @@ bool insert_merged_calls(const INS& ins) {
 }
 
 void instrumentation_func_per_trace(TRACE trace, void* v) {
+  {  // PROBE: trace compile statistics, every 1000 compiles
+    static std::unordered_map<ADDRINT, uint32_t> heads;      // trace start -> compiles
+    static std::unordered_map<ADDRINT, bool>     covered;    // instruction -> already in a compiled trace
+    static uint64_t total = 0, recompiled = 0, mid_entry = 0, ins_total = 0, ins_again = 0;
+    const ADDRINT head = TRACE_Address(trace);
+    total++;
+    recompiled += heads[head]++ > 0;
+    mid_entry += covered.count(head) && heads[head] == 1;  // first compile here, but inside an earlier trace
+    for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
+      for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
+        ins_total++;
+        ins_again += covered.count(INS_Address(ins)) > 0;
+        covered[INS_Address(ins)] = true;
+      }
+    if (!(total % 1000))
+      *out << "TRACESTAT uid=" << uid_ctr << " compiles=" << total << " distinct_heads=" << heads.size()
+           << " same_head_recompiles=" << recompiled << " new_head_inside_old_trace=" << mid_entry
+           << " ins_instrumented=" << ins_total << " ins_already_compiled=" << ins_again << endl;
+  }
 #ifdef DEBUG_PRINT
   stringstream instructions_ss;
 

@@ -1668,6 +1668,9 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
  *    cache_report_miss() when it sets repl_miss_by_report (cache_lib.h). Nothing is counted in
  *    update_evict, which also runs for get_next_repl_line's peek at the victim and again every
  *    time a refused fill is retried.
+ *  - BRRIP mode inserts as REPL_BRRIP does: at the long re-reference interval with probability
+ *    1/BRRIP_BIMODAL_PARA, else at the distant one. Its draws come from nrand48() on a per-cache
+ *    state, not the global rand(), so DRRIP neither shifts nor is shifted by other rand() users.
  *  - Hits promote to RRPV 0 (nru_update_hit); the victim search is rrip_update_evict.
  *
  * Leader sets are spread with the paper's constituency scheme over the S sets an index can
@@ -1683,6 +1686,7 @@ typedef struct Drrip_State_struct {
   uns8* role; /* per set: DRRIP_FOLLOWER or the policy it leads */
   uns psel;
   uns psel_max;
+  unsigned short rng[3]; /* nrand48 state for BRRIP-mode fills, private to this cache */
 } Drrip_State;
 
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
@@ -1700,7 +1704,8 @@ void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc
   uns sets = cache->set_mask + 1;
   uns leaders, constituency, k;
 
-  brrip_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+  /* Not brrip_action_init: it reseeds the global rand(), which DRRIP does not use. */
+  general_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
   ASSERTM(0, sets >= 2, "%s: REPL_DRRIP needs at least 2 sets for set dueling (got %u)\n", name, sets);
   ASSERTM(0, DRRIP_LEADER_SETS >= 1, "--drrip_leader_sets must be at least 1\n");
   ASSERTM(0, DRRIP_PSEL_BITS >= 1 && DRRIP_PSEL_BITS <= 30, "--drrip_psel_bits must be in [1, 30] (got %u)\n",
@@ -1748,10 +1753,14 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
       break;
   }
 
-  if (use_brrip)
-    brrip_update_insert(cache, proc_id, set, way, arg);
-  else
+  if (use_brrip) {
+    /* s->rng starts zeroed by calloc, a valid nrand48 state. */
+    cache->entries[set][way].reference_val =
+        nrand48(s->rng) % BRRIP_BIMODAL_PARA == 0 ? RRIP_DISTANT_VAL - 1 : RRIP_DISTANT_VAL;
+    cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
+  } else {
     srrip_update_insert(cache, proc_id, set, way, arg);
+  }
 
   DEBUG(0, "DRRIP insert: set 0x%x role %u psel %u brrip %d\n", set, s->role[set], s->psel, use_brrip);
 }

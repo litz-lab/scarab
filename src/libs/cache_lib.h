@@ -155,9 +155,13 @@ struct Cache_struct {
 
   Flag tag_incl_offset; /* The uop cache is byte-addressable, so the tag includes offset bits as well */
 
-  /* For DRRIP repl */
-  uns* dedicated_policy_set; /* For dedicated set map */
-  Counter* miss_count;       /* For sampling */
+  /* Who tells the replacement policy that a lookup missed (update_miss). FALSE: every insert
+     counts as one miss, which holds for a cache that inserts on its own misses. TRUE: the owner
+     calls cache_report_miss() once per miss instead -- needed where inserts are not misses, as at
+     a level of an exclusive hierarchy, which is filled by demotions from the level above. */
+  Flag repl_miss_by_report;
+
+  /* For BRRIP repl */
   Counter bimodal_count;
 
   /* For repl with predictor */
@@ -175,6 +179,7 @@ struct repl_policy_func {
   void (*update_hit)(Cache*, uns, uns, void*);
   void (*update_insert)(Cache*, uns8, uns, uns, void*);
   Cache_Entry* (*update_evict)(Cache*, uns8, uns, uns*, void*, Flag);
+  void (*update_miss)(Cache*, uns8, uns, void*); /* a lookup missed in this set; NULL: not used */
 };
 
 /* Driven Table */
@@ -185,6 +190,7 @@ void init_cache_strategy(Cache*, const char*, uns, uns, uns, uns, Repl_Policy);
 void* cache_insert_strategy(Cache* cache, uns8 proc_id, Addr addr, Addr* line_addr, Addr* repl_line_addr);
 void* cache_access_strategy(Cache* cache, Addr addr, Addr* line_addr, Flag* tag_aliasing, Flag update_repl);
 Cache_Entry* cache_evict_strategy(Cache* cache, uns8 proc_id, uns set, uns* way);
+void cache_report_miss(Cache* cache, uns8 proc_id, Addr addr);
 
 const static Flag CACHE_DEBUG_ENABLE = FALSE;  // To be Changed into DEBUG_PARA
 

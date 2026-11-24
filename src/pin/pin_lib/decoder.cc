@@ -92,8 +92,10 @@ void get_ld_ea(ADDRINT addr, UINT32 size);
 void get_ld_ea2(ADDRINT addr1, ADDRINT addr2, UINT32 size);
 void get_st_ea(ADDRINT addr);
 void get_branch_dir(bool taken);
-void get_src_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
-void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT reg_id, ADDRINT scarab_id);
+void get_src_vector_vals(ADDRINT val, ADDRINT scarab_id, UINT32 size);
+void get_dst_vector_vals(ADDRINT val, ADDRINT scarab_id, UINT32 size);
+static inline bool is_arch_gpr(uint8_t reg_id);
+static void insert_reg_val_call(const INS& ins, IPOINT ipoint, AFUNPTR fn, uint8_t scarab_id);
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count);
 void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info);
 void create_compressed_op_after(ADDRINT iaddr);
@@ -215,26 +217,14 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   // Src: IPOINT_BEFORE (values ready before exec). Dst: IPOINT_AFTER
   // (dst values only exist after exec);
   if (INS_Valid(ins)) {
-    for (uns i = 0; i < info->st.num_src_regs; i++) {
-      uint8_t scarab_id = info->st.src_regs[i];
-      auto it = reg_scarab_to_pin_map.find(scarab_id);
-      REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
-      // read pin_reg's value and store it into glb_src_vector_vals
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT,
-                     (ADDRINT)pin_reg, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_END);
-    }
+    for (uns i = 0; i < info->st.num_src_regs; i++)
+      insert_reg_val_call(ins, IPOINT_BEFORE, (AFUNPTR)get_src_vector_vals, info->st.src_regs[i]);
   }
 
   if (INS_Valid(ins)) {
     if (INS_IsValidForIpointAfter(ins)) {
-      for (uns i = 0; i < info->st.num_dst_regs; i++) {
-        uint8_t scarab_id = info->st.dst_regs[i];
-        auto it = reg_scarab_to_pin_map.find(scarab_id);
-        REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
-        // read pin_reg's value and store it into glb_dst_vector_vals
-        INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, IARG_CONST_CONTEXT, IARG_ADDRINT,
-                       (ADDRINT)pin_reg, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_END);
-      }
+      for (uns i = 0; i < info->st.num_dst_regs; i++)
+        insert_reg_val_call(ins, IPOINT_AFTER, (AFUNPTR)get_dst_vector_vals, info->st.dst_regs[i]);
       // Attach the dst values captured at IPOINT_AFTER.
       INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)create_compressed_op_after, IARG_INST_PTR, IARG_END);
     }
@@ -384,30 +374,26 @@ void get_branch_dir(bool taken) {
   glb_actually_taken = taken;
 }
 
-void get_src_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
-  REG reg = (REG)pin_reg;
-  PINTOOL_REGISTER reg_val;
-  uint64_t val = 0;
-  uint8_t size = 0;
-  if (REG_valid(reg)) {
-    PIN_GetContextRegval(ctxt, reg, (UINT8*)&reg_val);
-    val = reg_val.qword[0];
-    size = (uint8_t)(REG_Size(reg) * 8);
-  }
-  glb_src_vector_vals.push_back({(uint16_t)scarab_id, val, size});
+// Only GPR values reach the op (fill_register_values), so only GPR operands are captured.
+static void insert_reg_val_call(const INS& ins, IPOINT ipoint, AFUNPTR fn, uint8_t scarab_id) {
+  if (!is_arch_gpr(scarab_id))
+    return;
+  auto it = reg_scarab_to_pin_map.find(scarab_id);
+  REG pin_reg = (it != reg_scarab_to_pin_map.end()) ? it->second : REG_INVALID_;
+  if (REG_valid(pin_reg))
+    INS_InsertCall(ins, ipoint, fn, IARG_REG_VALUE, pin_reg, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_UINT32,
+                   (UINT32)(REG_Size(pin_reg) * 8), IARG_END);
+  else
+    INS_InsertCall(ins, ipoint, fn, IARG_ADDRINT, (ADDRINT)0, IARG_ADDRINT, (ADDRINT)scarab_id, IARG_UINT32, 0,
+                   IARG_END);
 }
 
-void get_dst_vector_vals(CONTEXT* ctxt, ADDRINT pin_reg, ADDRINT scarab_id) {
-  REG reg = (REG)pin_reg;
-  PINTOOL_REGISTER reg_val;
-  uint64_t val = 0;
-  uint8_t size = 0;
-  if (REG_valid(reg)) {
-    PIN_GetContextRegval(ctxt, reg, (UINT8*)&reg_val);
-    val = reg_val.qword[0];
-    size = (uint8_t)(REG_Size(reg) * 8);
-  }
-  glb_dst_vector_vals.push_back({(uint16_t)scarab_id, val, size});
+void get_src_vector_vals(ADDRINT val, ADDRINT scarab_id, UINT32 size) {
+  glb_src_vector_vals.push_back({(uint16_t)scarab_id, (uint64_t)val, (uint8_t)size});
+}
+
+void get_dst_vector_vals(ADDRINT val, ADDRINT scarab_id, UINT32 size) {
+  glb_dst_vector_vals.push_back({(uint16_t)scarab_id, (uint64_t)val, (uint8_t)size});
 }
 
 static inline bool is_arch_gpr(uint8_t reg_id) {
@@ -415,22 +401,16 @@ static inline bool is_arch_gpr(uint8_t reg_id) {
 }
 
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {
+  // global_vals holds the GPR operands only, in operand order
+  uns k = 0;
   for (int i = 0; i < reg_count; ++i) {
-    if (!is_arch_gpr(global_vals[i].id))
+    uint8_t id = is_dst ? inst->st.dst_regs[i] : inst->st.src_regs[i];
+    if (!is_arch_gpr(id))
       continue;
-    if (is_dst) {
-      ASSERTX(global_vals[i].id == inst->st.dst_regs[i]);
-      inst->dests[i].id = global_vals[i].id;
-      inst->dests[i].val = global_vals[i].val;
-      inst->dests[i].size = global_vals[i].size;
-      continue;
-    }
-
-    ASSERTX(global_vals[i].id == inst->st.src_regs[i]);
-    inst->srcs[i].id = global_vals[i].id;
-    inst->srcs[i].val = global_vals[i].val;
-    inst->srcs[i].size = global_vals[i].size;
+    ASSERTX(k < global_vals.size() && global_vals[k].id == id);
+    (is_dst ? inst->dests : inst->srcs)[i] = global_vals[k++];
   }
+  ASSERTX(k == global_vals.size());
 }
 
 void update_gather_scatter_num_ld_or_st(const ADDRINT                   iaddr,

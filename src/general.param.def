@@ -116,3 +116,18 @@ DEF_PARAM( ignore_bar_fetch             , IGNORE_BAR_FETCH           , Flag   , 
 DEF_PARAM( trace_bbv_output             , TRACE_BBV_OUTPUT          , char*  , string    , NULL     ,       )
 DEF_PARAM( trace_footprint_output       , TRACE_FOOTPRINT_OUTPUT    , char*  , string    , ""       ,       )
 DEF_PARAM( segment_instr_count          , SEGMENT_INSTR_COUNT       , uns64  , uns64     , 0        ,       )
+DEF_PARAM( kernel                       , KERNEL                    , uns    , kernel    , ILP_LIMITED,  ) 
+
+/* Synthetic Kernel Params */
+DEF_PARAM( workload_length              , WORKLOAD_LENGTH            , uns    , uns        , 1024    ,  ) 
+DEF_PARAM( starting_target              , STARTING_TARGET            , uns64  , uns64      ,  256    ,  ) 
+DEF_PARAM( target_stride                , TARGET_STRIDE              , uns64  , uns64      ,  128    ,  ) 
+DEF_PARAM( target_pool_size             , TARGET_POOL_SIZE           , uns    , uns        ,  1024    ,  ) 
+DEF_PARAM( t_nt_ratio                   , T_NT_RATIO                 , float  , float      , -0.5    ,  ) 
+DEF_PARAM( mem_hierachy_level           , MEM_HIERACHY_LEVEL         , uns    , mem_hierachy_level, DCACHE_LEVEL,  ) 
+DEF_PARAM( dependence_chain_count       , DEPENDENCE_CHAIN_COUNT     , uns    , uns        , 1       ,  ) 
+DEF_PARAM( inst_size                    , INST_SIZE                  , uns    , uns        , 1       ,  ) 
+DEF_PARAM( nop_size                     , NOP_SIZE                   , uns    , uns        , 1       ,  )
+DEF_PARAM( pad_length                   , PAD_LENGTH                 , uns    , uns        , 4096    ,  )  
+DEF_PARAM( target_sampling_strategy     , TARGET_SAMPLING_STRATEGY    , uns   , sampling_strategy, UNIFORM_RANDOM,  ) 
+DEF_PARAM( direction_sampling_strategy  , DIRECTION_SAMPLING_STRATEGY, uns    , sampling_strategy, UNIFORM_RANDOM,  ) 

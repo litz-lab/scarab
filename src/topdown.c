@@ -250,4 +250,21 @@ void topdown_done(uns proc_id) {
                  bad_spec_bound * GET_STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_RETIRED_CYCLES) / bad_spec_cycles);
   INC_STAT_EVENT(proc_id, TOPDOWN_MACHINE_CLEARS_BOUND,
                  bad_spec_bound - GET_STAT_EVENT(proc_id, TOPDOWN_BR_RECOVER_AT_EXEC_BOUND));
+
+  uns64 unutilised_ilp_slots_onpath = GET_STAT_EVENT(proc_id, TOPDOWN_UNUSED_ILP_SLOTS_ONPATH);
+
+  uns64 unutilised_bandwidth_slots_onpath = GET_STAT_EVENT(proc_id, ISSUE_QUEUE_OP_READY_UNISSUED_TOTAL);
+
+  uns64 unutilised_corebound_slots_onpath = unutilised_ilp_slots_onpath + unutilised_bandwidth_slots_onpath;
+
+  if (unutilised_corebound_slots_onpath == 0)
+    unutilised_corebound_slots_onpath++;
+
+  INC_STAT_EVENT(
+      proc_id, TOPDOWN_CORE_ILP_BOUND,
+      unutilised_ilp_slots_onpath * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) / unutilised_corebound_slots_onpath);
+
+  INC_STAT_EVENT(proc_id, TOPDOWN_CORE_BANDWIDTH_BOUND,
+                 unutilised_bandwidth_slots_onpath * GET_STAT_EVENT(proc_id, TOPDOWN_CORE_BOUND) /
+                     unutilised_corebound_slots_onpath);
 }

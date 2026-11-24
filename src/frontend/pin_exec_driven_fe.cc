@@ -70,6 +70,8 @@ void get_next_op_buffer_from_pin(uns proc_id) {
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);                       // blocking
   cached_cop_buffers[proc_id] = server->receive<ScarabOpBuffer_type>(proc_id);  // blocking
+  for (compressed_op& cop : cached_cop_buffers[proc_id])
+    cop.decoded = nullptr;  // a pointer from the PIN process
 }
 
 void update_op_buffer_if_empty(uns proc_id) {
@@ -84,7 +86,7 @@ inline void invalidate_op_buffer(uns proc_id) {
 }
 
 Addr get_fetch_address(uns proc_id, compressed_op* cop) {
-  return convert_to_cmp_addr(proc_id, cop->instruction_addr);
+  return convert_to_cmp_addr(proc_id, cop->st.instruction_addr);
 }
 
 /**********************************************************
@@ -135,13 +137,13 @@ void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, Op* op) {
   Flag eom = uop_generator_extract_op(proc_id, op, &cached_cop_buffers[proc_id].front());
   if (eom) {
     if (!decoupled_fe_is_off_path()) {
-      if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().scarab_marker_roi_begin == true) {
+      if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().st.scarab_marker_roi_begin == true) {
         ASSERT(proc_id, !roi_dump_began);
         // reset stats
         printf("Reached roi dump begin marker, reset stats\n");
         reset_stats(TRUE);
         roi_dump_began = TRUE;
-      } else if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().scarab_marker_roi_end == true) {
+      } else if (ROI_MARKER_DUMP && cached_cop_buffers[proc_id].front().st.scarab_marker_roi_end == true) {
         ASSERT(proc_id, roi_dump_began);
         // dump stats
         printf("Reached roi dump end marker, dump stats between\n");
@@ -153,7 +155,7 @@ void pin_exec_driven_fetch_op(uns proc_id, uns bp_id, Op* op) {
     cached_cop_buffers[proc_id].pop_front();
   }
 
-  DEBUG(proc_id, "Fetch Op end: %llx (%llu)\n", op->inst->addr, op->inst_uid);
+  DEBUG(proc_id, "Fetch Op end: %llx (%llu)\n", (Addr)op->inst->instruction_addr, op->inst_uid);
 }
 
 void pin_exec_driven_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr) {

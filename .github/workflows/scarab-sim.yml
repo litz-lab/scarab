@@ -17,6 +17,20 @@ on:
         required: false
         default: false
         type: boolean
+      pt_workload:
+        description: >-
+          Run this PT workload (datacenter/datacenter/<name>) in place of the
+          descriptor's simulations. Empty runs the descriptor's simulations.
+        required: false
+        default: ''
+        type: string
+      pt_inst_limit:
+        description: >-
+          --inst_limit for the PT run. A PT trace has no simpoints and is
+          simulated whole (100M instructions), so CI caps it.
+        required: false
+        default: '20000000'
+        type: string
       # Both repositories run this workflow, each pinning the other side to main:
       # a Scarab PR tests its own tree against scarab-infra main, a scarab-infra
       # PR tests its own tree against Scarab main. Defaults describe the latter.
@@ -124,22 +138,52 @@ jobs:
           d["scarab_path"] = os.environ["GITHUB_WORKSPACE"] + "/"
           d["root_dir"] = os.environ["GITHUB_WORKSPACE"] + "/"
           d["traces_dir"] = os.environ["GITHUB_WORKSPACE"] + "/traces_top_simpoint"
-          # Cover the exec-driven frontend too. Which simulations CI runs is CI's
-          # business, so it is declared here rather than in scarab-infra's
-          # descriptor; the workload's program is installed into application_dir
-          # by the step below.
-          d["simulations"].append({
-              "suite": "dhrystone",
-              "subsuite": "dhrystone",
-              "workload": "dhrystone",
-              "cluster_id": 0,
-              "simulation_type": "exec",
-              "warmup": 1000000,
-          })
+          pt_workload = os.environ["PT_WORKLOAD"].strip()
+          if pt_workload:
+              # PT frontend run: one whole PT trace, capped, in place of the
+              # descriptor's simulations. Like the exec run below, which
+              # simulations CI runs is CI's business. PT traces have no
+              # simpoints, and sci rejects any cluster_id for such a workload,
+              # so it must be null (sci then runs the whole trace as cluster 0).
+              d["simulations"] = [{
+                  "suite": "datacenter",
+                  "subsuite": "datacenter",
+                  "workload": pt_workload,
+                  "cluster_id": None,
+                  "simulation_type": "pt",
+                  "warmup": 10000000,
+              }]
+              limit = os.environ["PT_INST_LIMIT"].strip()
+              for config in d["configurations"].values():
+                  config["params"] = f'{config["params"]} --inst_limit {limit}'.strip()
+          else:
+              # Cover the exec-driven frontend too. Which simulations CI runs is CI's
+              # business, so it is declared here rather than in scarab-infra's
+              # descriptor; the workload's program is installed into application_dir
+              # by the step below.
+              d["simulations"].append({
+                  "suite": "dhrystone",
+                  "subsuite": "dhrystone",
+                  "workload": "dhrystone",
+                  "cluster_id": 0,
+                  "simulation_type": "exec",
+                  "warmup": 1000000,
+              })
           src.write_text(json.dumps(d, indent=2, separators=(',', ':')) + "\n")
           PY
         env:
           SCI_ID: ${{ inputs.sci_id }}
+          PT_WORKLOAD: ${{ inputs.pt_workload }}
+          PT_INST_LIMIT: ${{ inputs.pt_inst_limit }}
+
+      # sci --ci-init fetches only the memtrace CI trace.
+      - name: Download PT trace
+        if: inputs.pt_workload != ''
+        working-directory: infra
+        env:
+          trace_home: ${{ github.workspace }}/traces_top_simpoint
+          PT_WORKLOAD: ${{ inputs.pt_workload }}
+        run: ./sci --fetch-traces "datacenter.datacenter.${PT_WORKLOAD}.pt"
 
       - name: Build Scarab
         working-directory: infra
@@ -160,6 +204,7 @@ jobs:
       # points at, exactly as SPEC is on a lab machine. A runner has no such
       # tree, so put one here: application_dir is patched to the workspace.
       - name: Install exec-driven application binaries
+        if: inputs.pt_workload == ''
         run: |
           wget -q https://github.com/litz-lab/scarab-infra/releases/download/dhrystone-2.1/dhrystone-2.1-x86_64-static.tar.gz -O "$RUNNER_TEMP/dhrystone.tar.gz"
           tar -xzf "$RUNNER_TEMP/dhrystone.tar.gz" -C "$GITHUB_WORKSPACE"
@@ -197,6 +242,60 @@ jobs:
             echo "Expected $total completed simulations for this_pr, got '$completed'"
             exit 1
           fi
+
+      # How long each simulation took. The sim step runs them all at once and
+      # prints nothing per run, so without this a slow job cannot be traced to
+      # one workload. Runs even when the status check failed (not on cancel).
+      - name: Report simulation times
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import re
+          import subprocess
+
+          rows = []
+          for stat in sorted(glob.glob("simulations/*/this_pr/**/core.stat.0.out", recursive=True)):
+              run_dir = os.path.dirname(stat)
+              name = run_dir.split("/this_pr/", 1)[1]
+              files = [os.path.join(r, f) for r, _, fs in os.walk(run_dir) for f in fs]
+              # %W: birth time (0 if the filesystem does not record it); %Y: mtime.
+              out = subprocess.run(["stat", "-c", "%W %Y", *files],
+                                   capture_output=True, text=True).stdout.split()
+              births = [int(v) for v in out[0::2] if int(v) > 0]
+              mtimes = [int(v) for v in out[1::2]]
+              wall = f"{max(mtimes) - min(births)}" if births and mtimes else "n/a"
+              timed = "n/a"
+              with open(stat) as fh:
+                  for line in fh:
+                      if line.startswith("SIM_HOST_WALL_SECONDS"):
+                          timed = f"{float(line.split()[-1]):.0f}"
+                          break
+              kips = "n/a"
+              log = os.path.join(run_dir, "scarab.out")
+              if os.path.exists(log):
+                  with open(log, errors="replace") as fh:
+                      m = re.findall(r"Finished:.*\(([0-9.]+) KIPS\)", fh.read())
+                  if m:
+                      kips = m[-1]
+              rows.append((name, wall, timed, kips))
+
+          if not rows:
+              print("No simulation output found.")
+              raise SystemExit(0)
+          head = ("simulation", "wall s (files)", "timed s (Scarab)", "KIPS")
+          table = ["| " + " | ".join(head) + " |", "|---|--:|--:|--:|"]
+          table += ["| " + " | ".join(r) + " |" for r in rows]
+          print("\n".join(table))
+          print("wall: first file created to last file written in the run dir, "
+                "including fast-forward and frontend startup. "
+                "timed: Scarab's SIM_HOST_WALL_SECONDS, warmup and simulation only.")
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a") as fh:
+                  fh.write("### Simulation times\n\n" + "\n".join(table) + "\n")
+          PY
 
       - id: simdir
         if: inputs.collect_metrics
@@ -293,7 +392,10 @@ jobs:
           run_dir="${sim_dir}/this_pr/${workload_path}"
           log="${run_dir}/scarab.out"
           [ -f "$log" ] || log="${run_dir}/sim.log"
-          v=$(grep -oP '\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' "$log" | head -n1)
+          # The run's KIPS is the cumulative value on the "Core N Finished" line. The
+          # first heartbeat's value covers only the first 5% and counts whole seconds
+          # (src/sim.c), so it came out as 1M insts / 2, 3, 4 ... seconds.
+          v=$(grep -oP '^\*\* Core [0-9]+ Finished:.*\(\K[0-9]+(?=\.[0-9]+\s*KIPS\))' "$log" | tail -n1)
           if ! [[ "$v" =~ ^[0-9]+$ ]]; then
             echo "KIPS value is not a valid integer: '$v' Run failed!"
             echo "Contents of $log for debugging:"

@@ -73,7 +73,7 @@
 #include "topdown.h"
 #include "uop_queue_stage.h"
 
-static inline Inst_Info** icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr);
+static inline void* icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr);
 
 /**************************************************************************************/
 /* Macros */
@@ -97,12 +97,12 @@ extern Rob_Block_Issue_Reason rob_block_issue_reason;
 /* Local prototypes */
 
 static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uop_cache, uns start_idx);
-static inline Inst_Info** lookup_icache(void);
+static inline void* lookup_icache(void);
 static inline void prefetcher_update_on_icache_access(Flag icache_hit);
 static inline void icache_hit_events(void);
 static inline void icache_miss_events(void);
 static inline Flag mem_req_on_icache_miss(void);
-static inline Inst_Info** ic_pref_cache_access(void);
+static inline void* ic_pref_cache_access(void);
 static inline int32_t inst_lost_get_full_window_reason(void);
 static inline void log_stats_ic_miss(void);
 static inline void log_stats_ic_hit(void);
@@ -271,7 +271,7 @@ void recover_icache_stage() {
         op_select_bp_pred_info(cur_data->ops[ii], BP_PRED_MAIN);
         DEBUG(ic->proc_id, "Recovery op found in %s slot:%u op_num:%llu off_path:%u addr:0x%llx\n", cur_data->name, ii,
               (unsigned long long)cur_data->ops[ii]->op_num, cur_data->ops[ii]->off_path,
-              (unsigned long long)cur_data->ops[ii]->inst->addr);
+              (unsigned long long)cur_data->ops[ii]->inst->instruction_addr);
       }
       if (FLUSH_OP(cur_data->ops[ii])) {
         DEBUG(ic->proc_id, "Icache flushing op_num:%llu off_path:%u\n", (unsigned long long)cur_data->ops[ii]->op_num,
@@ -395,14 +395,14 @@ Flag in_icache(Addr addr) {
 /**************************************************************************************/
 /* lookup_icache: returns instr if found in icache or other structures when enabled
  */
-Inst_Info** lookup_icache() {
+void* lookup_icache() {
   STAT_EVENT(ic->proc_id, POWER_ICACHE_ACCESS);
   STAT_EVENT(ic->proc_id, POWER_ITLB_ACCESS);
 
-  Inst_Info** line = NULL;
-  line = (Inst_Info**)cache_access(&ic->icache, ic->fetch_addr, &ic->line_addr, TRUE);
+  void* line = NULL;
+  line = cache_access(&ic->icache, ic->fetch_addr, &ic->line_addr, TRUE);
   if (PERFECT_ICACHE && !line)
-    line = (Inst_Info**)INIT_CACHE_DATA_VALUE;
+    line = (void*)INIT_CACHE_DATA_VALUE;
 
   // ideal L2 Icache prefetcher
   if (IDEAL_L2_ICACHE_PREFETCHER && !line) {
@@ -426,7 +426,7 @@ Inst_Info** lookup_icache() {
   if (WP_COLLECT_STATS) {  // CMP remove?
     Addr dummy_addr;
     Icache_Data* line_info = (Icache_Data*)cache_access(&ic->icache_line_info, ic->fetch_addr, &dummy_addr, TRUE);
-    if (line && (line != (Inst_Info**)INIT_CACHE_DATA_VALUE)) {
+    if (line && (line != (void*)INIT_CACHE_DATA_VALUE)) {
       ASSERT(ic->proc_id, line_info);
       wp_process_icache_hit(line_info, ic->fetch_addr);
     }
@@ -982,7 +982,7 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     }
 
     ASSERTM(ic->proc_id, ic->off_path == op->off_path, "Inconsistent off-path op PC: %llx ic:%i op:%i\n",
-            op->inst->addr, ic->off_path, op->off_path);
+            (Addr)op->inst->instruction_addr, ic->off_path, op->off_path);
     ASSERT(ic->proc_id, ii == 0 || cur_data->ops[ii - 1]->unique_num < op->unique_num);
 
     if (!op->off_path) {
@@ -1039,13 +1039,13 @@ static inline void icache_process_ops(Stage_Data* cur_data, Flag fetched_from_uo
     DEBUG(ic->proc_id,
           "Fetching op from Icache addr: %s off: %d inst_info: %p ii_addr: %s "
           "dis: %s opnum: (%s:%s)\n",
-          hexstr64s(op->inst->addr), op->off_path, (void*)op->inst, hexstr64s(op->inst->addr), disasm_op(op, TRUE),
-          unsstr64(op->op_num), unsstr64(op->unique_num));
+          hexstr64s(op->inst->instruction_addr), op->off_path, (void*)op->inst, hexstr64s(op->inst->instruction_addr),
+          disasm_op(op, TRUE), unsstr64(op->op_num), unsstr64(op->unique_num));
 
     if (op->uop->cf_type) {
       // TODO: can we move this prefetch update to decoupled front-end or need it be here?
       if (DJOLT_ENABLE)
-        update_djolt(ic->proc_id, op->inst->addr, op->uop->cf_type, op->bp_pred_info->pred_npc);
+        update_djolt(ic->proc_id, op->inst->instruction_addr, op->uop->cf_type, op->bp_pred_info->pred_npc);
 
       ASSERT(ic->proc_id, (((op->bp_pred_info->recovery_point == RECOVER_AT_EXEC) << 2) |
                            ((op->bp_pred_info->recovery_point == RECOVER_AT_DECODE) << 1) |
@@ -1108,15 +1108,15 @@ static inline Flag icache_demote_victim(Addr fill_addr) {
 /* A request issued while its line was resident fills it again: inserting it again would demote
    a victim and then keep it (cache_insert reuses the line's own way). The line is still made
    MRU, as the insert did, which EIP's model of the icache relies on. */
-static inline Inst_Info** icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr) {
-  Inst_Info** line = (Inst_Info**)cache_access(&ic->icache, fill_addr, line_addr, TRUE);
+static inline void* icache_insert_line(Addr fill_addr, Addr* line_addr, Addr* repl_line_addr) {
+  void* line = cache_access(&ic->icache, fill_addr, line_addr, TRUE);
   if (line) {
     STAT_EVENT(ic->proc_id, ICACHE_FILL_RESIDENT);
     return line;
   }
   if (!icache_demote_victim(fill_addr))
     return NULL; /* a refused victim writeback leaves the icache untouched */
-  return (Inst_Info**)cache_insert(&ic->icache, ic->proc_id, fill_addr, line_addr, repl_line_addr);
+  return cache_insert(&ic->icache, ic->proc_id, fill_addr, line_addr, repl_line_addr);
 }
 
 /**************************************************************************************/
@@ -1126,7 +1126,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
 {
   Addr repl_line_addr;
   Addr repl_line_addr2;
-  Inst_Info** line;
+  void* line;
   Addr dummy_addr;
   Addr dummy_addr2;
   Icache_Data* line_info = NULL;
@@ -1159,7 +1159,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
     if (to_pref_cache) {
       Addr pref_line_addr;
 
-      line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id, ic->fetch_addr, &pref_line_addr, &repl_line_addr);
+      line = cache_insert(&ic->pref_icache, ic->proc_id, ic->fetch_addr, &pref_line_addr, &repl_line_addr);
       DEBUG(ic->proc_id, "Insert PREF_ICACHE fetch_addr0x:%s line_addr:%s addr:0x%s\n", hexstr64(ic->fetch_addr),
             hexstr64(pref_line_addr), hexstr64s(req->addr));
       STAT_EVENT(ic->proc_id, IC_PREF_CACHE_FILL);
@@ -1226,7 +1226,7 @@ Flag icache_fill_line(Mem_Req* req)  // cmp FIXME maybe needed to be optimized
         (USE_CONFIRMED_OFF ? req->off_path_confirmed : req->off_path)) {
       Addr pref_line_addr;
 
-      line = (Inst_Info**)cache_insert(&ic->pref_icache, ic->proc_id, req->addr, &pref_line_addr, &repl_line_addr);
+      line = cache_insert(&ic->pref_icache, ic->proc_id, req->addr, &pref_line_addr, &repl_line_addr);
       DEBUG(ic->proc_id, "Insert PREF_ICACHE fetch_addr0x:%s line_addr:%s addr:0x%s\n", hexstr64(req->addr),
             hexstr64(pref_line_addr), hexstr64s(req->addr));
       STAT_EVENT(ic->proc_id, IC_PREF_CACHE_FILL);
@@ -1303,12 +1303,12 @@ inline Flag icache_off_path(void) {
 /*************************************************************************************/
 /* ic_pref_cace_access() */
 
-Inst_Info** ic_pref_cache_access(void) {
+void* ic_pref_cache_access(void) {
   Addr repl_line_addr, inval_line_addr;
-  Inst_Info** inserted_line = NULL;
+  void* inserted_line = NULL;
 
   ASSERT_PROC_ID_IN_ADDR(ic->proc_id, ic->fetch_addr)
-  Inst_Info** line = (Inst_Info**)cache_access(&ic->pref_icache, ic->fetch_addr, &ic->line_addr, FALSE);
+  void* line = cache_access(&ic->pref_icache, ic->fetch_addr, &ic->line_addr, FALSE);
 
   if (ic->off_path && !PREFCACHE_MOVE_OFFPATH) {
     if (line) {

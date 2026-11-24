@@ -41,8 +41,10 @@ set(CMAKE_C_FLAGS_VALGRIND    "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtra
 set(CMAKE_CXX_FLAGS_VALGRIND  "-O0 -g3 -DLINUX -DX86_64 ${flags_enable_pt_memtrace}")
 set(CMAKE_C_FLAGS_GPROF       "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enable_pt_memtrace}")
 set(CMAKE_CXX_FLAGS_GPROF     "${CMAKE_CXX_FLAGS_SCARABOPT} -pg -g3 ${flags_enable_pt_memtrace}")
-set(CMAKE_C_FLAGS_DEBUG       "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
-set(CMAKE_CXX_FLAGS_DEBUG     "-O0 -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
+# -Og rather than -O0: with ASan, -O0 makes the dbg simulation about twice as slow
+# (issue #714); -Og keeps asserts, ASan checks and a usable gdb.
+set(CMAKE_C_FLAGS_DEBUG       "-Og -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
+set(CMAKE_CXX_FLAGS_DEBUG     "-Og -g3 -DLINUX -DX86_64 -fsanitize=address -fsanitize-address-use-after-scope ${flags_enable_pt_memtrace}")
 
 # Default ASan runtime options (embedded; ASAN_OPTIONS in the environment still overrides).
 set(SCARAB_ASAN_DEFAULT_OPTIONS

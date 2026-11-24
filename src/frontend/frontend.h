@@ -50,6 +50,9 @@ Flag frontend_can_fetch_op(uns proc_id, uns bp_id);
 /* Get an op from the frontend */
 void frontend_fetch_op(uns proc_id, uns bp_id, struct Op_struct* op);
 
+/* Let the frontend know that the core consumed the on-path instructions up to this one */
+void frontend_consume(uns proc_id, uns64 inst_uid);
+
 /* Redirect the front end (down the wrong path) */
 void frontend_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr);
 

@@ -105,7 +105,7 @@ void bp_conf_pred(Op* op, Bp_Pred_Level pred_level) {
       (bp_pred_info->recovery_point == RECOVER_AT_DECODE || bp_pred_info->recovery_point == RECOVER_AT_EXEC);
 
   // only updated on conditional branches
-  Addr addr = op->inst->addr;
+  Addr addr = op->inst->instruction_addr;
   uns32 hist = g_bp_data->global_hist;
   uns32 cooked_hist = COOK_HIST_BITS(hist, 0);
   uns32 cooked_addr = COOK_ADDR_BITS(addr, 2);
@@ -205,7 +205,7 @@ void pred_onpath_conf(Op* op, Bp_Pred_Level pred_level) {
          "pred_onpath_conf: op:%s ind:%u 0x%llx recover_at_fe:%d recover_at_decode:%d recover_at_exec:%d "
          "pred_ok:%d,%c "
          "off_path:%d pred_onpath:%d,%c\n",
-         unsstr64(op->op_num), head, op->inst->addr, bp_pred_info->recovery_point == RECOVER_AT_FE,
+         unsstr64(op->op_num), head, (Addr)op->inst->instruction_addr, bp_pred_info->recovery_point == RECOVER_AT_FE,
          bp_pred_info->recovery_point == RECOVER_AT_DECODE, bp_pred_info->recovery_point == RECOVER_AT_EXEC,
          opc_table->pred_conf, opc_table->recover_at_decode_or_exec != opc_table->pred_conf ? 'c' : 'm',
          opc_table->off_path, pred_onpath, opc_table->off_path != pred_onpath ? 'c' : 'm');
@@ -409,7 +409,7 @@ void conf_perceptron_init(void) {
 
 void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
   Bp_Pred_Info* bp_pred_info = conf_get_bp_pred_info(op, pred_level);
-  Addr addr = op->inst->addr;
+  Addr addr = op->inst->instruction_addr;
   uns64 hist = 0;
   uns32 index = CONF_PERCEPTRON_HASH(addr);
   uns8 pred_conf = 0;
@@ -479,7 +479,8 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
   _DEBUG(0, DEBUG_BP_CONF, "index:%d hist:%s output:%d conf_th:%d pred_conf:%d bp_pred:%d \n", index, hexstr64(hist),
          output, CONF_PERCEPTRON_TH, pred_conf, recover_at_decode_or_exec);
 
-  x_i = op->oracle_info.dir ? 1 : -1;
+  const Flag dir = op_dir_or_pred(op, bp_pred_info->pred);
+  x_i = dir ? 1 : -1;
 
   bp_pred_info->pred_conf_perceptron_global_hist = percep_bpc_data->conf_perceptron_global_hist;
   percep_bpc_data->conf_perceptron_global_hist >>= 1;
@@ -497,9 +498,9 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
     percep_bpc_data->conf_perceptron_global_hist |= (((uns64)x_i) << 63);
   } else {
     op->recovery_info.conf_perceptron_global_hist =
-        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)op->oracle_info.dir) << 63);
+        (percep_bpc_data->conf_perceptron_global_hist) | (((uns64)dir) << 63);
 
-    percep_bpc_data->conf_perceptron_global_hist |= (((uns64)(op->oracle_info.dir)) << 63);
+    percep_bpc_data->conf_perceptron_global_hist |= (((uns64)dir) << 63);
 
     op->recovery_info.conf_perceptron_global_misp_hist =
         (percep_bpc_data->conf_perceptron_global_misp_hist) | ((uns64)recover_at_decode_or_exec << 63);
@@ -525,7 +526,7 @@ void conf_perceptron_pred(Op* op, Bp_Pred_Level pred_level) {
 #define MIN_WEIGHT (-(MAX_WEIGHT + 1))
 
 void conf_perceptron_update(Op* op) {
-  Addr addr = op->inst->addr;
+  Addr addr = op->inst->instruction_addr;
   uns64 hist = 0;
   uns32 index = CONF_PERCEPTRON_HASH(addr);
   int32 output = op->conf_perceptron_output;

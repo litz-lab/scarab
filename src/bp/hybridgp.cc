@@ -291,7 +291,7 @@ uns8 bp_hybridgp_pred(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst->addr;
+  const Addr addr = op->inst->instruction_addr;
   const uns32 ghist = bp_pred_info->pred_global_hist;
   const uns32 phist = get_local_history(hybridgp_state, addr);
   const auto indices = cook_indices(addr, ghist, phist);
@@ -344,7 +344,7 @@ void bp_hybridgp_update(Op* op, Bp_Pred_Level pred_level) {
   const uns proc_id = op->proc_id;
   auto& hybridgp_state = hybridgp_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst->addr;
+  const Addr addr = op->inst->instruction_addr;
   const uns32 ghist = bp_pred_info->pred_global_hist;
   const uns32 phist = bp_pred_info->pred_local_hist;
   const auto indices = cook_indices(addr, ghist, phist);

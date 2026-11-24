@@ -36,7 +36,6 @@
 
 #include "dyn_inst.h"
 #include "ft_info.h"
-#include "inst_info.h"
 #include "op_info.h"
 #include "pred_info.h"
 #include "static_inst_info.h"
@@ -174,7 +173,7 @@ struct Op_struct {
   Counter unique_num;           // unique number for each instance of an op (not reset on recovery)
   Counter unique_num_per_proc;  // unique number per core
   uns64 inst_uid;               // unique number for the macro instruction provided by the frontend (PIN)
-  Static_Inst_Info* inst;       // shared per-macro-instruction static info
+  const ctype_pin_inst_static* inst;  // the decoded instruction (shared), or the op's own for fakes/patches
   Static_Op_Info* uop;          // per-uop static info
   Dynamic_Inst* dyn_inst;       // this op's dynamic macro instance (its sibling uop ops)
   Op_Info oracle_info;          // information about the execution of the op in the oracle
@@ -287,15 +286,45 @@ struct Op_struct {
 
 // Reach this op's sibling dynamic uop ops via its Dynamic_Inst (index 0 == bom, num_uops-1 == eom).
 static inline uns op_inst_num_uops(const Op* op) {
-  return op->inst->num_uop;
+  return op->uop->num_uop;
 }
 static inline Op* op_inst_uop(const Op* op, uns i) {
-  ASSERT(op->proc_id, op->dyn_inst && i < op->inst->num_uop);
+  ASSERT(op->proc_id, op->dyn_inst && i < op->uop->num_uop);
   return op->dyn_inst->uops[i];
 }
 static inline Op* op_inst_eom(const Op* op) {
   ASSERT(op->proc_id, op->dyn_inst);
-  return op->dyn_inst->uops[op->inst->num_uop - 1];
+  return op->dyn_inst->uops[op->uop->num_uop - 1];
+}
+
+/* The trace frontends cannot know a wrong-path branch's outcome: a conditional branch gets
+   oracle_info.dir = DIR_INVALID, an indirect one oracle_info.target = ADDR_INVALID, and both
+   oracle_info.npc = ADDR_INVALID. Where the wrong path needs an outcome, the prediction stands in.
+   (A conditional branch's ADDR_INVALID target means its static target is not known yet.) */
+static inline Flag cf_is_indirect(Cf_Type cf) {
+  return cf == CF_IBR || cf == CF_ICALL || cf == CF_ICO || cf == CF_RET;
+}
+
+static inline Flag op_target_unknown(const Op* op) {
+  return cf_is_indirect(op->uop->cf_type) && op->oracle_info.target == ADDR_INVALID;
+}
+
+static inline Flag op_oracle_known(const Op* op) {
+  return op->oracle_info.dir != DIR_INVALID && !op_target_unknown(op);
+}
+
+static inline Flag op_dir_or_pred(const Op* op, Flag pred) {
+  if (op->oracle_info.dir != DIR_INVALID)
+    return op->oracle_info.dir;
+  ASSERT(op->proc_id, op->off_path);
+  return pred;
+}
+
+static inline Addr op_target_or_pred(const Op* op, Addr pred_target) {
+  if (!op_target_unknown(op))
+    return op->oracle_info.target;
+  ASSERT(op->proc_id, op->off_path);
+  return pred_target;
 }
 
 static inline Counter op_get_fetch_cycle(const Op* op) {

@@ -353,12 +353,14 @@ void bp_ibtb_ittage_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 /* bp_ibtb_ittage_pred: returns the predicted target, 0 = no prediction */
 
 Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
-  if (PERFECT_IBP)
+  if (PERFECT_IBP) {
+    ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
     return op->oracle_info.target;
+  }
 
   const Ittage* it = bp_data->ittage;
   const Ittage_Hist* h = bp_data->ittage_hist;
-  const Addr pc = op->inst->addr;
+  const Addr pc = op->inst->instruction_addr;
   Ittage_Pred_Info* pi = &op->btb_pred_info->ittage;
 
   pi->provider = -1;
@@ -421,7 +423,7 @@ Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
       STAT_EVENT(op->proc_id, ITTAGE_PROVIDER_BASE + pi->provider);
     if (pi->used_alt)
       STAT_EVENT(op->proc_id, ITTAGE_USED_ALT);
-    if (pi->pred_target)
+    if (pi->pred_target && !op_target_unknown(op))
       STAT_EVENT(op->proc_id, pi->pred_target == op->oracle_info.target ? ITTAGE_CORRECT : ITTAGE_INCORRECT);
   }
 
@@ -457,6 +459,7 @@ void bp_ibtb_ittage_update(Bp_Data* bp_data, Op* op) {
   const Ittage_Pred_Info* pi = &op->btb_pred_info->ittage;
   const Addr correct = op->oracle_info.target;
   const uns proc_id = op->proc_id;
+  ASSERT(proc_id, correct != ADDR_INVALID);
 
   ASSERT(bp_data->proc_id, !bp_data->bp_id);
   if (PERFECT_IBP || correct == 0 || correct == ADDR_INVALID)
@@ -563,8 +566,8 @@ void bp_ittage_checkpoint(Bp_Data* bp_data, Op* op) {
 }
 
 void bp_ittage_spec_update(Bp_Data* bp_data, Op* op, const Bp_Pred_Info* bp_pred_info) {
-  hist_update(bp_data->ittage, bp_data->ittage_hist, op->uop->cf_type, op->inst->addr, bp_pred_info->pred_orig == TAKEN,
-              bp_pred_info->pred_npc);
+  hist_update(bp_data->ittage, bp_data->ittage_hist, op->uop->cf_type, op->inst->instruction_addr,
+              bp_pred_info->pred_orig == TAKEN, bp_pred_info->pred_npc);
 }
 
 /**************************************************************************************/

@@ -1,15 +1,18 @@
 #include "trace_fe.h"
 
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
+#include <optional>
 
 #include "bp/bp.param.h"
 
 #include "bp/bp.h"
+#include "frontend/decode_cache.h"
 #include "frontend/frontend_intf.h"
 #include "frontend/pt_memtrace/memtrace_fe.h"
 #include "frontend/pt_memtrace/pt_fe.h"
@@ -41,7 +44,14 @@ static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
-static std::unordered_map<uint64_t, ctype_pin_inst> pc_to_inst[MAX_NUM_PROCS];
+
+/* An on-path record read ahead of the core (by the lookahead buffer) */
+struct DeferredReplayUpdate {
+  uint64_t read_by_inst_uid;  // inst whose last-uop fetch read this record, which is the next inst's
+  ctype_pin_inst record;
+};
+// the replay buffer holds exactly the records read by the insts the core has consumed
+static std::deque<DeferredReplayUpdate> deferred_replay_updates[MAX_NUM_PROCS];
 
 /* Per-core circular buffer state */
 struct TraceBufState {
@@ -54,10 +64,9 @@ static TraceBufState trace_buf_state[MAX_NUM_PROCS];
 
 const int CLINE = ~0x3F;
 
-/* Stamped into replay-buffer oracle memory addresses when
-   POISON_REPLAY_BUFFER_ORACLE_VA is set. Deliberately non-canonical so any
-   consumer of a replayed address fails loudly rather than silently inheriting
-   on-path oracle state. */
+/* Stamped into every memory address of a replayed (off-path) instruction.
+   Deliberately non-canonical so any consumer of a replayed address fails loudly
+   rather than silently inheriting on-path oracle state. */
 static const uint64_t REPLAY_BUFFER_POISON_VA = 0xCAFEBABEDEADBEAFULL;
 
 extern uint64_t ins_id[MAX_NUM_PROCS];
@@ -70,7 +79,7 @@ Flag buf_map_find(uns proc_id, Addr line_addr) {
 // inserts the inst written to write_ptr location
 void buf_map_insert(uns proc_id) {
   TraceBufState &state = trace_buf_state[proc_id];
-  Addr line_addr = state.circ_buf[state.wrptr].instruction_addr & CLINE;
+  Addr line_addr = state.circ_buf[state.wrptr].st.instruction_addr & CLINE;
   auto it = state.buf_map.find(line_addr);
   if (it != state.buf_map.end()) {
     it->second++;
@@ -82,7 +91,7 @@ void buf_map_insert(uns proc_id) {
 
 void buf_map_remove(uns proc_id) {
   TraceBufState &state = trace_buf_state[proc_id];
-  Addr line_addr = state.circ_buf[state.rdptr].instruction_addr & CLINE;
+  Addr line_addr = state.circ_buf[state.rdptr].st.instruction_addr & CLINE;
   auto it = state.buf_map.find(line_addr);
   assert(it != state.buf_map.end());
   if (it->second > 1) {
@@ -93,112 +102,44 @@ void buf_map_remove(uns proc_id) {
   state.rdptr = (state.rdptr + 1) % TRACE_BUF_SIZE;
 }
 
+// Rebuild the last on-path instance of a PC from its decode-cache entry: the decoded
+// instruction, or the PT fake that replaced it, plus the recorded per-instance fields.
+static void replay_instance(ctype_pin_inst* inst, uint64_t pc, const DecodedInst* d) {
+  if (d->replay.fake == WPNM_FAKE_NOP) {
+    *inst = create_dummy_nop(pc, WPNM_FAKE_NOP, d->inst.size);
+  } else if (d->replay.fake == WPNM_FAKE_JMP) {
+    *inst = create_dummy_jump(pc, d->replay.branch_target, XED_ICLASS_JMP);
+  } else {
+    init_ctype_pin_inst(inst);
+    inst->st = d->inst;
+    inst->decoded = const_cast<DecodedInst*>(d);
+    inst->st.encoding_is_new = d->replay.encoding_is_new;
+    inst->st.num_ld = d->replay.num_ld;
+    inst->st.num_st = d->replay.num_st;
+  }
+  inst->st.instruction_addr = pc;
+  inst->st.branch_target = d->replay.branch_target;
+  inst->instruction_next_addr = d->replay.next_addr;
+  inst->inst_uid = d->replay.inst_uid;
+  inst->actually_taken = d->replay.taken;
+  inst->exit = d->replay.exit;
+  inst->last_inst_from_trace = d->replay.last_inst_from_trace;
+  inst->fetched_instruction = d->replay.fetched;
+  for (uns i = 0; i < MAX_LD_NUM; i++)
+    inst->ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+  for (uns i = 0; i < MAX_ST_NUM; i++)
+    inst->st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
+}
+
 void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
-  auto op_iter = pc_to_inst[proc_id].find(*off_path_addr);
-  if (op_iter != pc_to_inst[proc_id].end()) {
-    *inst = op_iter->second;
-    (*off_path_addr) += inst->size;
-    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->instruction_addr, inst->size);
+  const DecodedInst* d = decode_cache_replay_entry(proc_id, *off_path_addr);
+  if (d) {
+    replay_instance(inst, *off_path_addr, d);
+    (*off_path_addr) += inst->st.size;
+    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->st.instruction_addr, inst->st.size);
   } else {
     *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
     (*off_path_addr) += DUMMY_NOP_SIZE;
-  }
-}
-
-Flag ctype_pin_inst_same_mem_vaddr(ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
-  for (uns i = 0; i < MAX_LD_NUM; i++) {
-    if (inst_a.ld_vaddr[i] != inst_b.ld_vaddr[i]) {
-      return FALSE;
-    }
-  }
-
-  for (uns i = 0; i < MAX_ST_NUM; i++) {
-    if (inst_a.st_vaddr[i] != inst_b.st_vaddr[i]) {
-      return FALSE;
-    }
-  }
-
-  return TRUE;
-}
-
-void assert_ctype_pin_inst_same(uns proc_id, ctype_pin_inst inst_a, ctype_pin_inst inst_b) {
-  // uint64_t inst_uid;  // unique ID produced by the frontend
-
-  ASSERT(proc_id, inst_a.instruction_addr == inst_b.instruction_addr);
-  ASSERT(proc_id, inst_a.size == inst_b.size);
-  ASSERT(proc_id, inst_a.inst_binary_msb == inst_b.inst_binary_msb);
-  ASSERT(proc_id, inst_a.inst_binary_lsb == inst_b.inst_binary_lsb);
-  ASSERT(proc_id, inst_a.op_type == inst_b.op_type);
-  ASSERT(proc_id, inst_a.cf_type == inst_b.cf_type);
-  ASSERT(proc_id, inst_a.is_fp == inst_b.is_fp);
-  ASSERT(proc_id, inst_a.true_op_type == inst_b.true_op_type);
-  ASSERT(proc_id, inst_a.num_src_regs == inst_b.num_src_regs);
-  ASSERT(proc_id, inst_a.num_dst_regs == inst_b.num_dst_regs);
-  ASSERT(proc_id, inst_a.num_ld1_addr_regs == inst_b.num_ld1_addr_regs);
-  ASSERT(proc_id, inst_a.num_ld2_addr_regs == inst_b.num_ld2_addr_regs);
-  ASSERT(proc_id, inst_a.num_st_addr_regs == inst_b.num_st_addr_regs);
-
-  for (uns i = 0; i < MAX_SRC_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.src_regs[i] == inst_b.src_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_DST_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.dst_regs[i] == inst_b.dst_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.ld1_addr_regs[i] == inst_b.ld1_addr_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.ld2_addr_regs[i] == inst_b.ld2_addr_regs[i]);
-  }
-
-  for (uns i = 0; i < MAX_MEM_ADDR_REGS_NUM; i++) {
-    ASSERT(proc_id, inst_a.st_addr_regs[i] == inst_b.st_addr_regs[i]);
-  }
-
-  ASSERT(proc_id, inst_a.num_simd_lanes == inst_b.num_simd_lanes);
-  ASSERT(proc_id, inst_a.lane_width_bytes == inst_b.lane_width_bytes);
-  ASSERT(proc_id, inst_a.num_ld == inst_b.num_ld);
-  ASSERT(proc_id, inst_a.num_st == inst_b.num_st);
-  ASSERT(proc_id, inst_a.has_immediate == inst_b.has_immediate);
-
-  for (uns i = 0; i < MAX_LD_NUM; i++) {
-    ASSERT(proc_id, inst_a.ld_vaddr[i] == inst_b.ld_vaddr[i]);
-  }
-
-  for (uns i = 0; i < MAX_ST_NUM; i++) {
-    ASSERT(proc_id, inst_a.st_vaddr[i] == inst_b.st_vaddr[i]);
-  }
-
-  ASSERT(proc_id, inst_a.ld_size == inst_b.ld_size);
-  ASSERT(proc_id, inst_a.st_size == inst_b.st_size);
-  ASSERT(proc_id, inst_a.branch_target == inst_b.branch_target);
-  ASSERT(proc_id, inst_a.actually_taken == inst_b.actually_taken);
-
-  ASSERT(proc_id, inst_a.is_string == inst_b.is_string);
-  ASSERT(proc_id, inst_a.is_call == inst_b.is_call);
-  ASSERT(proc_id, inst_a.is_move == inst_b.is_move);
-  ASSERT(proc_id, inst_a.is_prefetch == inst_b.is_prefetch);
-
-  ASSERT(proc_id, inst_a.has_push == inst_b.has_push);
-  ASSERT(proc_id, inst_a.has_pop == inst_b.has_pop);
-  ASSERT(proc_id, inst_a.is_ifetch_barrier == inst_b.is_ifetch_barrier);
-  ASSERT(proc_id, inst_a.is_lock == inst_b.is_lock);
-
-  ASSERT(proc_id, inst_a.is_repeat == inst_b.is_repeat);
-  ASSERT(proc_id, inst_a.is_simd == inst_b.is_simd);
-  ASSERT(proc_id, inst_a.is_gather_scatter == inst_b.is_gather_scatter);
-  ASSERT(proc_id, inst_a.is_sentinel == inst_b.is_sentinel);
-
-  ASSERT(proc_id, inst_a.fake_inst == inst_b.fake_inst);
-  ASSERT(proc_id, inst_a.exit == inst_b.exit);
-  ASSERT(proc_id, inst_a.fake_inst_reason == inst_b.fake_inst_reason);
-  ASSERT(proc_id, inst_a.instruction_next_addr == inst_b.instruction_next_addr);
-
-  for (uns i = 0; i < 16; i++) {
-    ASSERT(proc_id, inst_a.pin_iclass[i] == inst_b.pin_iclass[i]);
   }
 }
 
@@ -246,6 +187,85 @@ int trace_read(int proc_id, ctype_pin_inst *next_onpath_pi) {
   return ret;
 }
 
+// Records pi as the last on-path instance of its PC, for wrong-path replay
+static void update_replay_buffer(uns proc_id, const ctype_pin_inst& pi) {
+  if (pi.st.is_trace_patch)  // synthetic patch records stay out of the replay buffer
+    return;
+  uint64_t addr = pi.st.instruction_addr;
+  // The entry of this instance's encoding records it; a PT fake records into the decoded
+  // instruction it replaced. last holds the PC's previous on-path instance.
+  DecodedInst* d = pi.st.fake_inst ? decode_cache_find(proc_id, addr) : pi.decoded;
+  ASSERT(proc_id, d);
+  DecodedInst*& replay = decode_cache_replay_slot(proc_id, addr);
+  const DecodedInst* last = replay;
+  // A PT fake carries no instruction bytes; the decoded instruction does.
+  uint64_t last_lsb = last && !last->replay.fake ? last->inst.inst_binary_lsb : 0;
+  uint64_t last_msb = last && !last->replay.fake ? last->inst.inst_binary_msb : 0;
+  if (!last) {
+  } else if (pi.st.encoding_is_new) {
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
+  } else if (pi.st.inst_binary_lsb != last_lsb || pi.st.inst_binary_msb != last_msb) {
+    DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
+          pi.st.size, pi.st.inst_binary_lsb, pi.st.inst_binary_msb);
+    // Handle jitted code
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
+  } else if (pi.instruction_next_addr != last->replay.next_addr) {
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + pi.st.op_type);
+  } else {
+    // replayed addresses are poisoned, so an instance never matches them
+    STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + pi.st.op_type);
+  }
+  if (pi.st.fake_inst) {
+    ASSERT(proc_id, pi.st.fake_inst_reason == WPNM_FAKE_NOP || pi.st.fake_inst_reason == WPNM_FAKE_JMP);
+    ASSERT(proc_id, pi.st.size == (pi.st.fake_inst_reason == WPNM_FAKE_NOP ? d->inst.size : 5));
+  }
+  d->replay.fake = pi.st.fake_inst ? pi.st.fake_inst_reason : 0;
+  d->replay.taken = pi.actually_taken;
+  d->replay.exit = pi.exit;
+  d->replay.last_inst_from_trace = pi.last_inst_from_trace;
+  d->replay.fetched = pi.fetched_instruction;
+  d->replay.encoding_is_new = pi.st.encoding_is_new;
+  d->replay.num_ld = pi.st.num_ld;
+  d->replay.num_st = pi.st.num_st;
+  d->replay.next_addr = pi.instruction_next_addr;
+  d->replay.branch_target = pi.st.branch_target;
+  d->replay.inst_uid = pi.inst_uid;
+  replay = d;
+}
+
+// Applies the records read by the insts up to inst_uid; returns the reader of the last record applied
+static std::optional<uint64_t> apply_replay_updates_up_to(uns proc_id, uns64 inst_uid) {
+  std::optional<uint64_t> last_reader;
+  auto& deferred = deferred_replay_updates[proc_id];
+  while (!deferred.empty() && deferred.front().read_by_inst_uid <= inst_uid) {
+    last_reader = deferred.front().read_by_inst_uid;
+    update_replay_buffer(proc_id, deferred.front().record);
+    deferred.pop_front();
+  }
+  return last_reader;
+}
+
+// The trace holds no wrong-path outcomes: a conditional branch's direction and an indirect branch's
+// target (and so their next PC) are unknown (op_oracle_known).
+static void invalidate_wrong_path_oracle(Op* op) {
+  switch (op->uop->cf_type) {
+    case CF_CBR:
+    case CF_REP:
+      op->oracle_info.dir = DIR_INVALID;
+      op->oracle_info.npc = ADDR_INVALID;
+      break;
+    case CF_IBR:
+    case CF_ICALL:
+    case CF_ICO:
+    case CF_RET:
+      op->oracle_info.target = ADDR_INVALID;
+      op->oracle_info.npc = ADDR_INVALID;
+      break;
+    default:
+      break;
+  }
+}
+
 void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
   // ext_trace_redirect should be called before fetching from the secondary fetch
   bool off_path_mode_ = off_path_mode[proc_id][bp_id];
@@ -256,10 +276,14 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
       uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
     } else {
       uop_generator_get_uop(proc_id, op, next_offpath_pi_);
-      op->exit = false;
     }
   } else {
     uop_generator_get_uop(proc_id, op, NULL);
+  }
+  // off-path ops can never be the last instruction to execute
+  if (off_path_mode_) {
+    op->exit = false;
+    invalidate_wrong_path_oracle(op);
   }
 
   if (uop_generator_get_eom(proc_id)) {
@@ -270,58 +294,24 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
-      } else if (!next_onpath_pi[proc_id].is_trace_patch) {
-        uint64_t addr = next_onpath_pi[proc_id].instruction_addr;
-        auto it = pc_to_inst[proc_id].find(addr);
-        if (it == pc_to_inst[proc_id].end()) {
-          pc_to_inst[proc_id].emplace(addr, next_onpath_pi[proc_id]);
-        } else if (next_onpath_pi[proc_id].encoding_is_new) {
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
-          it->second = next_onpath_pi[proc_id];
-        } else if (next_onpath_pi[proc_id].inst_binary_lsb != it->second.inst_binary_lsb ||
-                   next_onpath_pi[proc_id].inst_binary_msb != it->second.inst_binary_msb) {
-          DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
-                next_onpath_pi[proc_id].size, next_onpath_pi[proc_id].inst_binary_lsb,
-                next_onpath_pi[proc_id].inst_binary_msb);
-          // Handle jitted code
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-          it->second = next_onpath_pi[proc_id];
-        } else if (next_onpath_pi[proc_id].instruction_next_addr != it->second.instruction_next_addr) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
-          if (next_onpath_pi[proc_id].cf_type) {
-            ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == it->second.cf_type);
-            // This can fail for java pt traces
-            // ASSERT(proc_id, next_onpath_pi[proc_id].cf_type == CF_CBR ||
-            //                 next_onpath_pi[proc_id].cf_type >= CF_IBR ||
-            //                 next_onpath_pi[proc_id].last_inst_from_trace);
-          }
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + next_onpath_pi[proc_id].op_type);
-          it->second = next_onpath_pi[proc_id];
-        } else if (!ctype_pin_inst_same_mem_vaddr(next_onpath_pi[proc_id], it->second)) {
-          ASSERT(proc_id, next_onpath_pi[proc_id].op_type == it->second.op_type);
-          STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + next_onpath_pi[proc_id].op_type);
-          it->second = next_onpath_pi[proc_id];
-        } else {
-          if (DEBUG_TRACE_READ && DEBUG_RANGE_COND(proc_id)) {
-            assert_ctype_pin_inst_same(proc_id, next_onpath_pi[proc_id], it->second);
-          }
-        }
-        // Poison the oracle memory addresses of the replay-buffer entry for this
-        // PC; they are only ever read back to replay off-path instructions.
-        if (POISON_REPLAY_BUFFER_ORACLE_VA) {
-          ctype_pin_inst &replay_entry = pc_to_inst[proc_id][addr];
-          for (uns i = 0; i < MAX_LD_NUM; i++)
-            replay_entry.ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
-          for (uns i = 0; i < MAX_ST_NUM; i++)
-            replay_entry.st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
-        }
+      } else if (LOOKAHEAD_BUF_SIZE) {
+        // read ahead of the core: applied once the core consumes the inst that read it
+        deferred_replay_updates[proc_id].push_back({op->inst_uid, next_onpath_pi[proc_id]});
+      } else {
+        update_replay_buffer(proc_id, next_onpath_pi[proc_id]);
       }
     } else {
       off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);
     }
   }
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode_,
-        next_onpath_pi[proc_id].instruction_addr, next_offpath_pi_->instruction_addr);
+        next_onpath_pi[proc_id].st.instruction_addr, next_offpath_pi_->st.instruction_addr);
+}
+
+void ext_trace_consume(uns proc_id, uns64 inst_uid) {
+  const std::optional<uint64_t> last_reader = apply_replay_updates_up_to(proc_id, inst_uid);
+  // The consumed FT's last inst read the next record, unless the trace ended there
+  ASSERT(proc_id, last_reader == inst_uid || reached_exit[proc_id]);
 }
 
 Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id) {
@@ -341,8 +331,8 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
   off_path_mode[proc_id][bp_id] = true;
   off_path_addr[proc_id][bp_id] = fetch_addr;
   off_path_generate_inst(proc_id, &off_path_addr[proc_id][bp_id], &next_offpath_pi[proc_id][bp_id]);
-  DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].instruction_addr,
-        next_offpath_pi[proc_id][bp_id].instruction_addr);
+  DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].st.instruction_addr,
+        next_offpath_pi[proc_id][bp_id].st.instruction_addr);
 }
 
 void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
@@ -360,16 +350,16 @@ void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
   while (!uop_generator_get_eom(proc_id)) {
     uop_generator_get_uop(proc_id, &dummy_op, &next_offpath_pi[proc_id][bp_id]);
   }
-  DEBUG(proc_id, "Recover CF:%lx ", next_onpath_pi[proc_id].instruction_addr);
+  DEBUG(proc_id, "Recover CF:%lx ", next_onpath_pi[proc_id].st.instruction_addr);
 }
 
 void ext_trace_retire(uns proc_id, uns64 inst_uid) {
-  // Trace frontend does not need to communicate to PIN which instruction are
-  // retired.
+  // functional warmup (uop_sim) reports consumption only through retire
+  apply_replay_updates_up_to(proc_id, inst_uid);
 }
 
 Addr ext_trace_next_fetch_addr(uns proc_id) {
-  return next_onpath_pi[proc_id].instruction_addr;
+  return next_onpath_pi[proc_id].st.instruction_addr;
 }
 
 void ext_trace_init() {
@@ -464,7 +454,7 @@ typedef struct basic_block_info {
     std::vector<ctype_pin_inst>::size_type size =
         ins_list.size() < rhs.ins_list.size() ? ins_list.size() : rhs.ins_list.size();
     for (unsigned i = 0; i < size; i++) {
-      if (ins_list[i].instruction_addr < rhs.ins_list[i].instruction_addr) {
+      if (ins_list[i].st.instruction_addr < rhs.ins_list[i].st.instruction_addr) {
         return true;
       }
     }
@@ -482,7 +472,7 @@ typedef struct basic_block_info {
     }
 
     for (unsigned i = 0; i < this->ins_list.size(); i++) {
-      if (this->ins_list[i].instruction_addr != bb.ins_list[i].instruction_addr) {
+      if (this->ins_list[i].st.instruction_addr != bb.ins_list[i].st.instruction_addr) {
         return true;
       }
     }
@@ -519,8 +509,8 @@ void output_counts(uint64_t num_of_segments, bb_counts counts_dynamic, bb_counts
       for (unsigned j = 0; j < i->second.size(); j++) {
         printf("[%ld]: size %ld, freq %ld\n", i->second[j].bb_id, i->second[j].ins_list.size(), i->second[j].freq);
         for (unsigned k = 0; k < i->second[j].ins_list.size(); k++) {
-          printf("%s: %u, %d\n", hexstr64s(i->second[j].ins_list[k].instruction_addr),
-                 i->second[j].ins_list[k].true_op_type, i->second[j].ins_list[k].last_inst_from_trace);
+          printf("%s: %u, %d\n", hexstr64s(i->second[j].ins_list[k].st.instruction_addr),
+                 i->second[j].ins_list[k].st.true_op_type, i->second[j].ins_list[k].last_inst_from_trace);
         }
       }
     }
@@ -591,19 +581,19 @@ void ext_trace_extract_basic_block_vectors() {
   ctype_pin_inst *inst = &next_onpath_pi[proc_id];
   int success = true;
 
-  printf("read from initialization: %p\n", (void *)(inst->instruction_addr));
+  printf("read from initialization: %p\n", (void*)(inst->st.instruction_addr));
 
   // continue till trace end
   while (success) {
     if (inst->actually_taken) {
-      ASSERT(proc_id, inst->cf_type);
-      op_taken_count[inst->cf_type]++;
+      ASSERT(proc_id, inst->st.cf_type);
+      op_taken_count[inst->st.cf_type]++;
     }
-    if (inst->instruction_next_addr != inst->instruction_addr + inst->size) {
-      if (!inst->cf_type && !inst->is_repeat && !inst->last_inst_from_trace) {
-        fprintf(stderr, "the cf change is not due to cf or rep or trace end at %p\n", (void *)inst->instruction_addr);
+    if (inst->instruction_next_addr != inst->st.instruction_addr + inst->st.size) {
+      if (!inst->st.cf_type && !inst->st.is_repeat && !inst->last_inst_from_trace) {
+        fprintf(stderr, "the cf change is not due to cf or rep or trace end at %p\n", (void*)inst->st.instruction_addr);
       }
-      ASSERT(proc_id, inst->cf_type || inst->is_repeat || inst->last_inst_from_trace);
+      ASSERT(proc_id, inst->st.cf_type || inst->st.is_repeat || inst->last_inst_from_trace);
     }
 
     // add to current basic block
@@ -614,15 +604,15 @@ void ext_trace_extract_basic_block_vectors() {
     // increment fetched count if it is fetched
     if (inst->fetched_instruction) {
       // increment unique inst frequency
-      footprint[inst->instruction_addr]++;
+      footprint[inst->st.instruction_addr]++;
       cur_bb.inst_count_fetched++;
     }
 
     // read the next instruction from the trace, which overwrites inst
     success = trace_read(proc_id, inst);
 
-    if (cur_bb.ins_list.back().is_repeat && !inst->is_repeat) {
-      ASSERT(proc_id, cur_bb.ins_list.back().instruction_addr != inst->instruction_addr);
+    if (cur_bb.ins_list.back().st.is_repeat && !inst->st.is_repeat) {
+      ASSERT(proc_id, cur_bb.ins_list.back().st.instruction_addr != inst->st.instruction_addr);
     }
 
     // decide if it's the end of current basic block
@@ -634,10 +624,10 @@ void ext_trace_extract_basic_block_vectors() {
     // note that the next inst is available if success
     // if so, find the frequency counter and increment
 
-    if (cur_bb.ins_list.back().cf_type || !success || (!cur_bb.ins_list.back().is_repeat && inst->is_repeat) ||
-        cur_bb.ins_list.back().is_repeat) {
+    if (cur_bb.ins_list.back().st.cf_type || !success || (!cur_bb.ins_list.back().st.is_repeat && inst->st.is_repeat) ||
+        cur_bb.ins_list.back().st.is_repeat) {
       std::unordered_map<uint64_t, basic_block_info>::iterator map_lookup =
-          bb_map.find(cur_bb.ins_list.front().instruction_addr);
+          bb_map.find(cur_bb.ins_list.front().st.instruction_addr);
 
       // std::ofstream cinstf;
       // cinstf.open("cinst.log", std::ofstream::out | std::ofstream::app);
@@ -653,7 +643,7 @@ void ext_trace_extract_basic_block_vectors() {
         cur_bb.bb_id = map_lookup->second.bb_id;
 
         // sanity check: are they the same?
-        auto bb_key = cur_bb.ins_list.front().instruction_addr;
+        auto bb_key = cur_bb.ins_list.front().st.instruction_addr;
         bool find = false;
         // bb_identity_map is cleared at segment boundary
         // so the sieze could be zero
@@ -673,7 +663,7 @@ void ext_trace_extract_basic_block_vectors() {
           if (bb_identity_map[bb_key].size() > 1) {
             for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
               fprintf(stderr, "[%lu]: ad: %p, op: %d\n", map_lookup->second.bb_id,
-                      (void *)cur_bb.ins_list[i].instruction_addr, cur_bb.ins_list[i].true_op_type);
+                      (void*)cur_bb.ins_list[i].st.instruction_addr, cur_bb.ins_list[i].st.true_op_type);
             }
             fprintf(stderr, "DUP bb detected%s\n", success ? "" : " at trace end");
           }
@@ -690,17 +680,17 @@ void ext_trace_extract_basic_block_vectors() {
         counts_as_built.fetched_size += cur_bb.inst_count_fetched;
 
         // enter bb map
-        bb_map[cur_bb.ins_list.front().instruction_addr] = cur_bb;
+        bb_map[cur_bb.ins_list.front().st.instruction_addr] = cur_bb;
         // sanity check
         cur_bb.freq++;
-        bb_identity_map[cur_bb.ins_list.front().instruction_addr].push_back(cur_bb);
-        ASSERT(proc_id, bb_identity_map[cur_bb.ins_list.front().instruction_addr].size() == 1);
+        bb_identity_map[cur_bb.ins_list.front().st.instruction_addr].push_back(cur_bb);
+        ASSERT(proc_id, bb_identity_map[cur_bb.ins_list.front().st.instruction_addr].size() == 1);
 
         // fprintf(stderr, "======================\n");
         static int bb_built_count = 0;
         for (uint i = 0; i < cur_bb.ins_list.size(); i++) {
-          fprintf(stderr, "[%d]: ad: %p, op: %d\n", bb_built_count, (void *)cur_bb.ins_list[i].instruction_addr,
-                  cur_bb.ins_list[i].true_op_type);
+          fprintf(stderr, "[%d]: ad: %p, op: %d\n", bb_built_count, (void*)cur_bb.ins_list[i].st.instruction_addr,
+                  cur_bb.ins_list[i].st.true_op_type);
         }
         bb_built_count++;
         fprintf(stderr, "new bb detected: %d\n", bb_built_count);
@@ -807,7 +797,7 @@ void ext_trace_extract_basic_block_vectors() {
           fingerprint[cur_bb.bb_id] += to_last_vector_count;
         } else {
           // TRACE_BBV_DISTRIBUTED_MODE
-          fingerprint[cur_bb.ins_list.front().instruction_addr] += to_last_vector_count;
+          fingerprint[cur_bb.ins_list.front().st.instruction_addr] += to_last_vector_count;
         }
       }
 
@@ -843,7 +833,7 @@ void ext_trace_extract_basic_block_vectors() {
             fingerprint.insert(std::make_pair(cur_bb.bb_id, to_new_vector_count));
           } else {
             // TRACE_BBV_DISTRIBUTED_MODE
-            uint64_t bb_addr = cur_bb.ins_list.front().instruction_addr;
+            uint64_t bb_addr = cur_bb.ins_list.front().st.instruction_addr;
             fingerprint.insert(std::make_pair(bb_addr, to_new_vector_count));
           }
 

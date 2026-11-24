@@ -181,7 +181,8 @@ void print_op_field(FILE* stream, Op* op, uns field) {
       break;
     case ADDR_FIELD:
       if (op && op->inst) {
-        fprintf(stream, "a:%-9s f:%-2d%c", hexstr64s(op->inst->addr), op->fu_num, (op->off_path ? 'O' : ' '));
+        fprintf(stream, "a:%-9s f:%-2d%c", hexstr64s(op->inst->instruction_addr), op->fu_num,
+                (op->off_path ? 'O' : ' '));
         if (OP_DONE(op))
           fprintf(stream, "D ");
         else {
@@ -354,7 +355,7 @@ void print_func_op(Op* op) {
     sprintf(opcode, "%s", Op_Type_str(op->uop->op_type));
   }
 
-  fprintf(GLOBAL_DEBUG_STREAM, "%2d  %08x  %10s", op->proc_id, (uns32)op->inst->addr, opcode);
+  fprintf(GLOBAL_DEBUG_STREAM, "%2d  %08x  %10s", op->proc_id, (uns32)op->inst->instruction_addr, opcode);
 
   char buf[MAX_STR_LENGTH + 1];
   print_reg_array(buf, op->uop->srcs, op->uop->num_src_regs);

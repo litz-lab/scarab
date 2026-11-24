@@ -31,8 +31,7 @@ Fake_Scarab::~Fake_Scarab() {
 void Fake_Scarab::fetch_instructions(const std::vector<uint64_t>& addresses) {
   for(auto address : addresses) {
     fetch_next_instruction();
-    ASSERT_TRUE(CHECK_EQUAL_IN_HEX(fetched_ops_.back().instruction_addr,
-                                   address, "instruction address"));
+    ASSERT_TRUE(CHECK_EQUAL_IN_HEX(fetched_ops_.back().st.instruction_addr, address, "instruction address"));
   }
 }
 
@@ -41,10 +40,9 @@ void Fake_Scarab::fetch_instructions_in_wrongpath_nop_mode(
   Wrongpath_Nop_Mode_Reason expected_reason) {
   for(int i = 0; i < num_instructions; ++i) {
     fetch_next_instruction();
-    ASSERT_TRUE(CHECK_EQUAL_IN_HEX(fetched_ops_.back().instruction_addr,
-                                   next_fetch_addr, "instruction address"));
-    ASSERT_TRUE(fetched_ops_.back().fake_inst);
-    ASSERT_EQ(fetched_ops_.back().fake_inst_reason, expected_reason);
+    ASSERT_TRUE(CHECK_EQUAL_IN_HEX(fetched_ops_.back().st.instruction_addr, next_fetch_addr, "instruction address"));
+    ASSERT_TRUE(fetched_ops_.back().st.fake_inst);
+    ASSERT_EQ(fetched_ops_.back().st.fake_inst_reason, expected_reason);
 
     next_fetch_addr += 1;
   }
@@ -72,7 +70,7 @@ void Fake_Scarab::fetch_until_first_control_flow() {
   do {
     ASSERT_FALSE(has_reached_end());
     fetch_next_instruction();
-  } while(fetched_ops_.back().cf_type == 0);
+  } while (fetched_ops_.back().st.cf_type == 0);
 }
 
 void Fake_Scarab::fetch_until_first_wrongpath_nop_mode(
@@ -80,8 +78,8 @@ void Fake_Scarab::fetch_until_first_wrongpath_nop_mode(
   for(int i = 0; i < max_num_instructions; ++i) {
     fetch_next_instruction();
 
-    if(fetched_ops_.back().fake_inst) {
-      ASSERT_EQ(fetched_ops_.back().fake_inst_reason, expected_reason);
+    if (fetched_ops_.back().st.fake_inst) {
+      ASSERT_EQ(fetched_ops_.back().st.fake_inst_reason, expected_reason);
       return;
     }
   }
@@ -98,7 +96,7 @@ uint64_t Fake_Scarab::get_latest_inst_uid() {
 }
 
 bool Fake_Scarab::has_fetched_ifetch_barrier() {
-  return !fetched_ops_.empty() && fetched_ops_.back().is_ifetch_barrier;
+  return !fetched_ops_.empty() && fetched_ops_.back().st.is_ifetch_barrier;
 }
 
 bool Fake_Scarab::has_reached_end() {

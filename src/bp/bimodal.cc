@@ -92,14 +92,10 @@ void bp_bimodal_init() {
 
 uns8 bp_bimodal_pred(Op* op, Bp_Pred_Level pred_level) {
   (void)pred_level;
-  if (op->off_path && SPEC_LEVEL < BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON) {
-    return op->oracle_info.dir;
-  }
-
   const uns proc_id = op->proc_id;
   const auto& bimodal_state = bimodal_state_all_cores.at(proc_id);
 
-  const Addr addr = op->inst->addr;
+  const Addr addr = op->inst->instruction_addr;
   const uns32 pht_index = get_pht_index(addr);
   const uns8 pht_entry = bimodal_state.pht[pht_index];
   const uns8 pred = pht_entry >> (PHT_CTR_BITS - 1) & 0x1;
@@ -124,7 +120,7 @@ void bp_bimodal_update(Op* op, Bp_Pred_Level pred_level) {
 
   const uns proc_id = op->proc_id;
   auto& bimodal_state = bimodal_state_all_cores.at(proc_id);
-  const Addr addr = op->inst->addr;
+  const Addr addr = op->inst->instruction_addr;
   const uns32 pht_index = get_pht_index(addr);
 
   DEBUG(proc_id, "Writing bimodal PHT for op_num:%s index:%u dir:%u\n", unsstr64(op->op_num), pht_index,

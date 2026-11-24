@@ -2,6 +2,10 @@ SCRIPT=$(readlink -f "$0")
 SCRIPTDIR=$(dirname "$SCRIPT")
 
 DRIO_BUILD_DIR=${SCRIPTDIR}/../../src/build/opt/deps/dynamorio
+if [ ! -x ${DRIO_BUILD_DIR}/clients/bin64/drraw2trace ]; then
+    echo "drraw2trace not built; run: make -C ${DRIO_BUILD_DIR}" >&2
+    exit 1
+fi
 
 for dir in */; do
     echo "$dir"

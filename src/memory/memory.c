@@ -983,10 +983,14 @@ void update_memory() {
    copies and the capacity that exclusivity buys is lost. The dirty bit travels with
    the line via req->dirty_l0, which dcache_fill_line() applies to the new copy. A
    dirty line promoted to the icache has nowhere to carry it, so that copy is kept. */
+static inline Flag promote_keeps_dirty_copy(Mem_Req* req, Flag dirty) {
+  return dirty && (req->type == MRT_IFETCH || req->type == MRT_IPRF || req->destination == DEST_ICACHE);
+}
+
 static inline void mem_invalidate_on_promote(Mem_Req* req, Cache* cache, Flag dirty, Stat_Enum inval_stat) {
   if (!EXCLUSIVE_CACHES || !EXCLUSIVE_PROMOTE_INVALIDATE)
     return;
-  if (dirty && (req->type == MRT_IFETCH || req->type == MRT_IPRF || req->destination == DEST_ICACHE)) {
+  if (promote_keeps_dirty_copy(req, dirty)) {
     STAT_EVENT(req->proc_id, EXCL_PROMOTE_KEPT_DIRTY);
     return;
   }
@@ -1161,6 +1165,15 @@ Flag mem_process_l1_hit_access(Mem_Req* req, Addr* line_addr, L1_Data* data, int
 /* FALSE when the done_func refused the line; the lookup is retried next cycle. */
 
 Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, int lru_position) {
+  /* done_func is the dcache fill, and it applies req->dirty_l0 to the new copy, so a promotion
+     must put the MLC line's dirty bit on the request before done_func runs: set only by
+     mem_invalidate_on_promote below, it came too late, the dcache got a clean copy, the dirty
+     MLC copy was invalidated, and the write was lost. Undone if done_func refuses the line,
+     which then stays in the MLC for the retry. */
+  Flag old_dirty_l0 = req->dirty_l0;
+  if (data && EXCLUSIVE_CACHES && EXCLUSIVE_PROMOTE_INVALIDATE && req->destination < DEST_MLC && req->type != MRT_WB &&
+      req->type != MRT_WB_NODIRTY && !promote_keeps_dirty_copy(req, data->dirty))
+    req->dirty_l0 |= data->dirty;
   if (!req->done_func || req->done_func(req)) {
     /* If done_func is not complete we will keep accessing MLC until done_func returns TRUE */
 
@@ -1231,6 +1244,7 @@ Flag mem_process_mlc_hit_access(Mem_Req* req, Addr* line_addr, MLC_Data* data, i
 
     return TRUE;
   } else {
+    req->dirty_l0 = old_dirty_l0;
     return FALSE;
   }
 }
@@ -2206,11 +2220,12 @@ Flag mem_adjust_matching_request(Mem_Req* req, Mem_Req_Type type, Addr addr, uns
       req->oldest_op_unique_num =
           ((op->unique_num < req->oldest_op_unique_num) ? op->unique_num : req->oldest_op_unique_num);
       req->oldest_op_op_num = ((op->unique_num < req->oldest_op_unique_num) ? op->op_num : req->oldest_op_op_num);
-      req->oldest_op_addr = ((op->unique_num < req->oldest_op_unique_num) ? op->inst->addr : req->oldest_op_addr);
+      req->oldest_op_addr =
+          ((op->unique_num < req->oldest_op_unique_num) ? op->inst->instruction_addr : req->oldest_op_addr);
     } else {
       req->oldest_op_unique_num = op->unique_num;
       req->oldest_op_op_num = op->op_num;
-      req->oldest_op_addr = op->inst->addr;
+      req->oldest_op_addr = op->inst->instruction_addr;
     }
     if (req->off_path && !(op->off_path)) {  // cmp IGNORE
       STAT_EVENT(req->proc_id, MEM_REQ_MATCH_OFF_PATH_HIT_BY_ON_PATH);
@@ -2459,7 +2474,7 @@ static void mem_init_new_req(Mem_Req* new_req, Mem_Req_Type type, uns8 proc_id, 
 
     new_req->oldest_op_unique_num = op->unique_num;
     new_req->oldest_op_op_num = op->op_num;
-    new_req->oldest_op_addr = op->inst->addr;
+    new_req->oldest_op_addr = op->inst->instruction_addr;
     op->req = new_req;
   }
 
@@ -2657,10 +2672,12 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (L1_Data*)cache_access(&L1(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_ul1_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_hit(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                     (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_ul1_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_ul1_miss(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                      (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   } else {
@@ -2675,10 +2692,12 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
       data = (MLC_Data*)cache_access(&MLC(proc_id)->cache, addr, &line_addr, FALSE);
 
       if (data) {
-        pref_umlc_hit(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_hit(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                      (op ? op->bp_pred_info->pred_global_hist : 0));
       } else {
         // TREAT queue hits as misses
-        pref_umlc_miss(proc_id, addr, (op ? op->inst->addr : 0), (op ? op->bp_pred_info->pred_global_hist : 0));
+        pref_umlc_miss(proc_id, addr, (op ? op->inst->instruction_addr : 0),
+                       (op ? op->bp_pred_info->pred_global_hist : 0));
       }
     }
   }
@@ -2690,7 +2709,7 @@ Flag new_mem_req(Mem_Req_Type type, uns8 proc_id, Addr addr, uns size, uns delay
 
   /* Step 6: Insert the request into the appropriate MSHR file if it is not already there */
 
-  new_req->loadPC = op ? op->inst->addr : 0;
+  new_req->loadPC = op ? op->inst->instruction_addr : 0;
   new_req->prefetcher_id = (pref_info ? pref_info->prefetcher_id : 0);
   new_req->pref_distance = (pref_info ? pref_info->distance : 0);
   new_req->pref_loadPC = (pref_info ? pref_info->loadPC : 0);
@@ -3977,7 +3996,7 @@ void wp_process_reqbuf_match(Mem_Req* req, Op* op) {
         DEBUG(0,
               "Reqbuf match: On path hits off path. va:%s op:%s op:0x%s "
               "wp_op:0x%s opu:%s wpu:%s dist:%s%s\n",
-              hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst->addr),
+              hexstr64s(op->oracle_info.va), disasm_op(op, TRUE), hexstr64s(op->inst->instruction_addr),
               hexstr64s(req->oldest_op_addr), unsstr64(op->unique_num), unsstr64(req->oldest_op_unique_num),
               op->unique_num > req->oldest_op_unique_num ? " " : "-",
               op->unique_num > req->oldest_op_unique_num ? unsstr64(op->unique_num - req->oldest_op_unique_num)

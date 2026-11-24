@@ -167,7 +167,7 @@ static inline OpType scarab_to_cbp_optype(Cf_Type cf_type) {
 }
 
 typedef enum {
-  BP_PRED_ON,                                     // BP only if on-path, return oracle->pred if off-path
+  BP_PRED_ON,                                     // no speculative update, no checkpoints
   BP_PRED_ON_SPEC_UPDATE_S_ON_N_ON,               // + take checkpoints
   BP_PRED_ON_SPEC_UPDATE_S_ONOFF_N_ON,            // + off-path spec_update for speculative components
   BP_PRED_ONOFF_SPEC_UPDATE_S_ONOFF_N_ON,         // + BP both on on/off-path

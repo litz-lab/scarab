@@ -108,7 +108,7 @@ void trace_setup(uns proc_id) {
 /* trace_next_fetch_addr */
 
 Addr trace_next_fetch_addr(uns proc_id) {
-  return convert_to_cmp_addr(proc_id, next_pi[proc_id].instruction_addr);
+  return convert_to_cmp_addr(proc_id, next_pi[proc_id].st.instruction_addr);
 }
 
 /**************************************************************************************/

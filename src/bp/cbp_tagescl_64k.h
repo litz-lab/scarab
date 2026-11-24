@@ -189,6 +189,15 @@ struct PredictorStates {
   bool predloop = false;  // prediction of LOOP predictor
   int LHIT = 0;           // hitting way in LOOP predictor
   bool LVALID = false;    // validity of LOOP predictor prediction
+  int LI = 0;             // LOOP index, way hash and tag of the predicted branch
+  int LIB = 0;
+  int LTAG = 0;
+  // SC local / IMLI histories the prediction read (training uses the same ones)
+  long long L_hist = 0;
+  long long S_hist = 0;
+  long long T_hist = 0;
+  long long IM_hist = 0;
+  long long IMLI_cnt = 0;
   // TAGE
   bool pred_taken = false;  // final prediction
   bool tage_pred = false;   // prediction of TAGE: one of LongestMatchPred or alttaken
@@ -232,6 +241,14 @@ struct PredictorStates {
     predloop = false;
     LHIT = 0;
     LVALID = 0;
+    LI = 0;
+    LIB = 0;
+    LTAG = 0;
+    L_hist = 0;
+    S_hist = 0;
+    T_hist = 0;
+    IM_hist = 0;
+    IMLI_cnt = 0;
     pred_taken = false;
     tage_pred = false;
     pred_inter = false;
@@ -368,6 +385,9 @@ struct SpeculativeStates : public SpeculativeStatesBase {
 struct Checkpoint : public SpeculativeStatesBase {
   std::array<std::array<int8_t, 1 << LOGGNB>, GNB> GGEHL = {};  // GEHL component which exploits 'GHIST'
   std::array<std::array<int8_t, 1 << LOGPNB>, PNB> PGEHL = {};  // GEHL component which exploits 'phist'
+  // local / IMLI histories (sized by TAGE64K's arrays)
+  std::vector<long long> IMHIST, L_shist, S_slhist, T_slhist;
+  long long IMLIcount = 0;
 };
 
 struct PredictorEntry {
@@ -590,7 +610,7 @@ class TAGE64K {
   int lindex(UINT64 PC);
   bool getloop(UINT64 PC);
   void SpecLoopUpdate(UINT64 PC, bool Taken, long long on_path_phist, int on_path_ptghist, bool off_path);
-  void LoopUpdate(UINT64 PC, bool Taken, bool ALLOC, int lhit, long long on_path_phist, int on_path_ptghist);
+  void LoopUpdate(bool Taken, bool ALLOC, const PredictorStates& pstate);
 
   // P: Predictor components
   PredictorStates Pstate;
@@ -626,9 +646,6 @@ class TAGE64K {
   int8_t SecondH = 0;
   // LOOP
   int8_t WITHLOOP = 0;  // N: counter to monitor whether or not loop prediction is beneficial
-  int LIB = 0;
-  int LI = 0;
-  int LTAG = 0;  // tag on the loop predictor
   // ALT
   std::array<int8_t, SIZEUSEALT> use_alt_on_na =
       {};  // N: counters to choose between longest match and second longest match on TAGE

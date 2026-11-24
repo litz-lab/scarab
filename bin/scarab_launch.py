@@ -190,7 +190,9 @@ class Pin:
     return self.cmd
 
   def __get_pin_program_command(self):
-    self.cmd = "{pin} -mt 0 -t {pin_tool} -socket_path {socket} -core_id {core_id} {additional_args} -- {program_command}".format(
+    # one basic block per JIT region: PIN register-allocates multi-block regions far more slowly (about 2x
+    # exec speed on gcc), and overlapping multi-block traces recompile the same code
+    self.cmd = "{pin} -xyzzy -region_max_bbls 1 -mt 0 -t {pin_tool} -socket_path {socket} -core_id {core_id} {additional_args} -- {program_command}".format(
         pin=args.pin,
         pin_tool=args.frontend_pin_tool,
         socket=self.socket_path,

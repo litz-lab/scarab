@@ -229,6 +229,9 @@ void Message<std::deque<T>>::copy(const std::deque<T>& object) {
   assertm(data_size <= MAX_PACKET_SIZE, "Scarab does not currently support "
                                         "sending messages larger than "
                                         "MAX_PACKET_SIZE.\n");
+  // one allocation, kept by a reused message: growing op by op mmaps and unmaps in PIN's allocator
+  data.clear();
+  data.reserve(MAX_PACKET_SIZE);
 
   for (const T& elem : object) {
     const char* object_ptr = reinterpret_cast<const char*>(&elem);

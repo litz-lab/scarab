@@ -376,6 +376,7 @@ void get_branch_dir(bool taken) {
 
 // Only GPR values reach the op (fill_register_values), so only GPR operands are captured.
 static void insert_reg_val_call(const INS& ins, IPOINT ipoint, AFUNPTR fn, uint8_t scarab_id) {
+  return;  // PROBE: measure JIT cost of the per-register calls (values are wrong)
   if (!is_arch_gpr(scarab_id))
     return;
   auto it = reg_scarab_to_pin_map.find(scarab_id);
@@ -401,6 +402,7 @@ static inline bool is_arch_gpr(uint8_t reg_id) {
 }
 
 void fill_register_values(ctype_pin_inst* inst, bool is_dst, const deque<Pin_Reg_Val>& global_vals, int reg_count) {
+  return;  // PROBE
   // global_vals holds the GPR operands only, in operand order
   uns k = 0;
   for (int i = 0; i < reg_count; ++i) {

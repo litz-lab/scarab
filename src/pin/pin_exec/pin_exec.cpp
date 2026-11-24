@@ -231,9 +231,8 @@ void insert_processing_for_syscalls(const INS& ins) {
 
 void insert_checks_for_control_flow(const INS& ins) {
   if(INS_IsRet(ins)) {
-    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_ret_control_ins),
-                   IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_CONTEXT,
-                   IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_ret_control_ins), IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE,
+                   IARG_CONST_CONTEXT, IARG_END);
   } else if(INS_IsBranchOrCall(ins)) {
     if(INS_IsDirectBranchOrCall(ins)) {
       if(INS_Category(ins) == XED_CATEGORY_COND_BR) {
@@ -264,19 +263,16 @@ void insert_checks_for_control_flow(const INS& ins) {
 
 void insert_processing_for_nonsyscall_instructions(const INS& ins) {
   if(!INS_IsMemoryWrite(ins)) {
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_no_mem, IARG_CONTEXT,
-                   IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_no_mem, IARG_CONST_CONTEXT, IARG_END);
   } else {
     if (!INS_HasScatteredMemoryAccess(ins)) {
       // Single memory op (known size); scatter/gather -> multi-mem path below
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_one_mem,
-                     IARG_CONTEXT, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE,
-                     IARG_END);
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_one_mem, IARG_CONST_CONTEXT, IARG_MEMORYWRITE_EA,
+                     IARG_MEMORYWRITE_SIZE, IARG_END);
     } else {
       // Multiple memory ops
-      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_multi_mem,
-                     IARG_CONTEXT, IARG_MULTI_MEMORYACCESS_EA, IARG_BOOL,
-                     INS_IsVscatter(ins), IARG_END);
+      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)before_ins_multi_mem, IARG_CONST_CONTEXT, IARG_MULTI_MEMORYACCESS_EA,
+                     IARG_BOOL, INS_IsVscatter(ins), IARG_END);
     }
   }
 }

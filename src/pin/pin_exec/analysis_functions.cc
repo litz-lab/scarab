@@ -100,7 +100,7 @@ void process_syscall(ADDRINT ip, ADDRINT num, ADDRINT arg0, ADDRINT arg1,
   }
 }
 
-void save_context(CONTEXT* ctxt) {
+void save_context(const CONTEXT* ctxt) {
   PIN_SaveContext(ctxt, &checkpoints.get_tail().ctxt);
 }
 
@@ -173,7 +173,7 @@ void save_mem(ADDRINT write_addr, UINT32 write_size, UINT write_index) {
 #endif
 }
 
-void finish_before_ins_all(CONTEXT* ctxt, bool from_syscall) {
+void finish_before_ins_all(const CONTEXT* ctxt, bool from_syscall) {
   entered_wpnm = false;
   while(on_wrongpath_nop_mode) {
     entered_wpnm = true;
@@ -204,7 +204,7 @@ void finish_before_ins_all(CONTEXT* ctxt, bool from_syscall) {
             "Falling into application\n");
 }
 
-void add_right_path_exec_br(CONTEXT* ctxt) {
+void add_right_path_exec_br(const CONTEXT* ctxt) {
   // Create dummy jmp
   ADDRINT eip;
   PIN_GetContextRegval(ctxt, REG_INST_PTR, (UINT8*)&eip);
@@ -247,7 +247,7 @@ void after_ins_restage_op(ADDRINT iaddr) {
     op_mailbox = *pin_decoder_get_latest_inst();
 }
 
-void before_ins_no_mem(CONTEXT* ctxt) {
+void before_ins_no_mem(const CONTEXT* ctxt) {
   if(!fast_forward_count) {
     if(seen_rightpath_exc_mode) {
       add_right_path_exec_br(ctxt);
@@ -270,7 +270,7 @@ void before_ins_no_mem(CONTEXT* ctxt) {
   }
 }
 
-void before_ins_one_mem(CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_size) {
+void before_ins_one_mem(const CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_size) {
   write_addr = ADDR_MASK(write_addr);
   if(!fast_forward_count) {
     if(seen_rightpath_exc_mode) {
@@ -295,9 +295,7 @@ void before_ins_one_mem(CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_size) {
   }
 }
 
-void before_ins_multi_mem(CONTEXT*                   ctxt,
-                          PIN_MULTI_MEM_ACCESS_INFO* mem_access_info_from_pin,
-                          bool                       is_scatter) {
+void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_access_info_from_pin, bool is_scatter) {
   if(!fast_forward_count) {
     if(seen_rightpath_exc_mode) {
       add_right_path_exec_br(ctxt);
@@ -409,7 +407,7 @@ void logging(ADDRINT n_eip, ADDRINT curr_eip, BOOL check_next_addr,
   }
 }
 
-void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, CONTEXT* ctxt) {
+void check_ret_control_ins(ADDRINT read_addr, UINT32 read_size, const CONTEXT* ctxt) {
   read_addr = ADDR_MASK(read_addr);
   if(!fast_forward_count) {
     ASSERTM(0, read_size <= 8,

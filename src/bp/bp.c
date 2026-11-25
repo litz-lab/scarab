@@ -605,11 +605,18 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       // however, the branch will flush again at exec when it is determined that the prediction was wrong
       // Scarab does not support flushing twice per op. Flushing at exec should not introduce inaccuracy.
       else if (!btb_hit && bp_pred_info->pred == TAKEN && op->oracle_info.dir == NOT_TAKEN) {
-        bp_pred_info->recovery_point = RECOVER_AT_EXEC;
+        // If this is L0, the prediction fetches the fall-through, which is correct, and L0 does not trigger recovery.
+        // The only exception is a BTB entry that arrives before main's direction (e.g. L1 BTB), causing early recovery.
+        const Flag l0_pred_correct =
+            pred_level == BP_PRED_L0 && !btb_pred_hit_by(op->btb_pred_info, BP_MAIN_LATENCY - 1);
+        bp_pred_info->recovery_point = l0_pred_correct ? RECOVER_AT_NONE : RECOVER_AT_EXEC;
         bp_pred_info->pred = NOT_TAKEN;
         bp_pred_info->pred_npc = pred_target;  // Not accurate. At fetch it would execute pc_plus_offset, at decode
                                                // would resteer frontend to pred_taken
-        STAT_EVENT_BP_SPLIT_PATH(op, CBR_RECOVER_BTB_MISS_T_NT);
+        if (l0_pred_correct)
+          STAT_EVENT_BP_SPLIT_PATH(op, CBR_CORRECT_BTB_MISS_T_NT);
+        else
+          STAT_EVENT_BP_SPLIT_PATH(op, CBR_RECOVER_BTB_MISS_T_NT);
       }
       // 3. Branch is predicted not-taken causing branch to continue to exec where the flush is triggered
       else if (!btb_hit && bp_pred_info->pred == NOT_TAKEN && op->oracle_info.dir == TAKEN) {
@@ -1080,7 +1087,7 @@ void bp_resolve_op(Bp_Data* bp_data, Op* op) {
   }
   ASSERT(op->proc_id, op_oracle_known(op));
   if ((op->uop->cf_type == CF_CBR || op->uop->cf_type == CF_REP) && op->oracle_info.dir == TAKEN &&
-      op->bp_pred_info->pred_orig != TAKEN)
+      op->bp_pred_info->pred_orig == NOT_TAKEN)
     bp_data->bp_btb->update_func(bp_data, op, TAKEN);
   // Always train both predictors regardless of which one made the active prediction.
   op->recovery_info.branch_id = op->bp_pred_main.pred_branch_id;

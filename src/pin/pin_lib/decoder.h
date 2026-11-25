@@ -67,6 +67,10 @@ UINT32 pin_decoder_add_after_args(const INS& ins, ctype_pin_inst* info, IARGLIST
 Dec_Vals pin_decoder_parse(UINT32 flags, const ADDRINT* a);
 void pin_decoder_before(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const Dec_Vals& v);
 const ADDRINT* pin_decoder_after(ADDRINT iaddr, UINT32 flags, const ADDRINT* a);
+// Folding an instruction's AFTER work into the next instruction's BEFORE call: whether prev's GPR destinations
+// fit the value slots, and the args (read at ins's BEFORE) carrying them; pin_decoder_after consumes both.
+bool pin_decoder_dsts_fit_slots(ADDRINT prev_addr);
+UINT32 pin_decoder_add_prev_dst_args(const INS& ins, ADDRINT prev_addr, IARGLIST args, uns* nargs);
 
 // An analysis routine taking a variable number of ADDRINT args: one instantiation per count.
 typedef void (*Merged_Impl)(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const ADDRINT* a);
@@ -87,7 +91,7 @@ AFUNPTR merged_entry_at(size_t nargs, std::index_sequence<N...>) {
 }
 template <Merged_Impl F>
 AFUNPTR merged_entry(size_t nargs) {
-  return merged_entry_at<F>(nargs, std::make_index_sequence<13>());
+  return merged_entry_at<F>(nargs, std::make_index_sequence<20>());
 }
 
 void pin_decoder_print_unknown_opcodes();

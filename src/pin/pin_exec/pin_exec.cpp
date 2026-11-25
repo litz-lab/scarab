@@ -306,12 +306,13 @@ void insert_processing_for_nonsyscall_instructions(const INS& ins) {
 }
 
 // Merged per-instruction calls. Flag bits beyond the decoder's (decoder.h): logging's fall-through and
-// taken inputs, before_ins_one_mem, and the control-flow check kind.
+// taken inputs, before_ins_one_mem, the control-flow check kind, and the previous instruction's folded AFTER.
 enum {
   PX_FALLTHROUGH = 1 << 4,
   PX_LOG_TAKEN = 1 << 5,
   PX_ONE_MEM = 1 << 6,
-  PX_CF_SHIFT = 11
+  PX_CF_SHIFT = 11,
+  PX_PREV_DST = 1 << 14
 };
 enum {
   PX_CF_NONE,
@@ -331,6 +332,12 @@ void ins_before(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const ADDRINT
   const UINT32 write_size = (flags & PX_ONE_MEM) ? (UINT32)*p++ : 0;
   const UINT32 cf = (flags >> PX_CF_SHIFT) & 7;
   const ADDRINT reg_target = (cf == PX_CF_REG) ? *p++ : 0;
+  if (flags & PX_PREV_DST) {  // the previous instruction's AFTER work (after_folded)
+    const ADDRINT prev = pin_decoder_get_latest_inst()->st.instruction_addr;
+    const UINT32 prev_flags = (UINT32)*p++;
+    pin_decoder_after(prev, prev_flags, p);
+    after_ins_restage_op(prev);
+  }
 
   logging(iaddr + info->st.size, iaddr, (flags & PX_FALLTHROUGH) != 0, (flags & PX_LOG_TAKEN) && v.taken);
   pin_decoder_before(info, iaddr, flags, v);
@@ -365,13 +372,27 @@ void ins_after(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const ADDRINT*
   after_ins_restage_op(iaddr);
 }
 
-// One BEFORE and one AFTER call for an ordinary instruction (PIN's JIT cost grows with the number of
-// analysis calls). Returns false, inserting nothing, for instructions that keep the separate calls.
-bool insert_merged_calls(const INS& ins) {
+// Instruments ins with the merged calls (insert_merged_calls) rather than the separate ones.
+bool merged_ins(const INS& ins) {
   const bool magic = INS_IsXchg(ins) && INS_OperandReg(ins, 0) == REG_GCX && INS_OperandReg(ins, 1) == REG_GCX;
   const bool mem = INS_IsMemoryRead(ins) || INS_IsMemoryWrite(ins);
-  if (magic || INS_IsVgather(ins) || INS_IsVscatter(ins) || INS_HasScatteredMemoryAccess(ins) ||
-      (KnobCheckpointMemOps.Value() && mem))
+  return !INS_IsSyscall(ins) && !is_ifetch_barrier(INS_XedDec(ins)) && !magic && !INS_IsVgather(ins) &&
+         !INS_IsVscatter(ins) && !INS_HasScatteredMemoryAccess(ins) && !(KnobCheckpointMemOps.Value() && mem);
+}
+
+// ins's AFTER work (destination values, re-staging its op) runs in the next instruction's BEFORE call: within
+// straight-line code the next instruction runs right after ins, with ins's destinations written.
+bool after_folded(const INS& ins) {
+  const INS next = INS_Next(ins);
+  return INS_Valid(next) && merged_ins(ins) && merged_ins(next) && INS_HasFallThrough(ins) && !INS_IsControlFlow(ins) &&
+         !INS_HasRealRep(ins) && INS_IsValidForIpointAfter(ins) && pin_decoder_dsts_fit_slots(INS_Address(ins));
+}
+
+// One BEFORE and one AFTER call for an ordinary instruction (PIN's JIT cost grows with the number of
+// analysis calls); no AFTER call when after_folded. Returns false, inserting nothing, for instructions
+// that keep the separate calls.
+bool insert_merged_calls(const INS& ins) {
+  if (!merged_ins(ins))
     return false;
 
   ctype_pin_inst* info = pin_decoder_prepare(ins);
@@ -404,6 +425,16 @@ bool insert_merged_calls(const INS& ins) {
     }
   }
   flags |= cf << PX_CF_SHIFT;
+  const INS prev = INS_Prev(ins);
+  if (INS_Valid(prev) && after_folded(prev)) {
+    flags |= PX_PREV_DST;
+    IARGLIST prev_args = IARGLIST_Alloc();
+    uns prev_nargs = 0;
+    const UINT32 prev_flags = pin_decoder_add_prev_dst_args(ins, INS_Address(prev), prev_args, &prev_nargs);
+    IARGLIST_AddArguments(args, IARG_UINT32, prev_flags, IARG_IARGLIST, prev_args, IARG_END);
+    IARGLIST_Free(prev_args);
+    nargs += 1 + prev_nargs;
+  }
   // the dummy jump after a right-path exception checkpoints the live context
   INS_InsertIfCall(ins, IPOINT_BEFORE, (AFUNPTR)rightpath_exc_pending, IARG_END);
   INS_InsertThenCall(ins, IPOINT_BEFORE, (AFUNPTR)handle_rightpath_exc, IARG_CONST_CONTEXT, IARG_END);
@@ -411,7 +442,7 @@ bool insert_merged_calls(const INS& ins) {
                  IARG_IARGLIST, args, IARG_END);
   IARGLIST_Free(args);
 
-  if (INS_IsValidForIpointAfter(ins)) {
+  if (INS_IsValidForIpointAfter(ins) && !after_folded(ins)) {
     nargs = 0;
     args = IARGLIST_Alloc();
     flags = pin_decoder_add_after_args(ins, info, args, &nargs);
@@ -480,7 +511,7 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
                 (uint64_t)INS_Address(ins));
 
       xed_decoded_inst_t* xed_ins = INS_XedDec(ins);
-      if (!INS_IsSyscall(ins) && !is_ifetch_barrier(xed_ins) && insert_merged_calls(ins))
+      if (insert_merged_calls(ins))
         return;
 
       insert_logging(ins);

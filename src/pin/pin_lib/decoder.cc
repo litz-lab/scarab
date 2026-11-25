@@ -252,6 +252,20 @@ UINT32 pin_decoder_add_after_args(const INS& ins, ctype_pin_inst* info, IARGLIST
                           (AFUNPTR)get_dst_vector_vals);
 }
 
+bool pin_decoder_dsts_fit_slots(ADDRINT prev_addr) {
+  const ctype_pin_inst* info = inst_info_storage.at(prev_addr);
+  uns n = 0;
+  for (uns i = 0; i < info->st.num_dst_regs; i++)
+    n += is_arch_gpr(info->st.dst_regs[i]);
+  return n <= DEC_REG_SLOTS && !Knob_translate_x87_regs.Value();
+}
+
+UINT32 pin_decoder_add_prev_dst_args(const INS& ins, ADDRINT prev_addr, IARGLIST args, uns* nargs) {
+  const ctype_pin_inst* info = inst_info_storage.at(prev_addr);
+  return add_reg_val_args(ins, args, nargs, IPOINT_BEFORE, info->st.dst_regs, info->st.num_dst_regs,
+                          (AFUNPTR)get_dst_vector_vals);
+}
+
 void create_compressed_op_after(ADDRINT iaddr) {
   if (fast_forward_count)
     return;

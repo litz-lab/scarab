@@ -140,14 +140,17 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
   Flag flag = bp_data->crs.off_path[new_tail];
   Addr addr = bp_data->crs.entries[new_tail << 1 | flag].addr;
   Flag mispred;
+  // A wrong-path return has no target in the trace, so it is predicted as without PERFECT_CRS
+  const Flag use_oracle_target = PERFECT_CRS && !op_target_unknown(op);
+  ASSERT(op->proc_id, !op_target_unknown(op) || op->off_path);
 
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
   if (bp_data->crs.depth == 0) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  head:%d  tail:%d  offpath:%d\n", bp_data->crs.head, bp_data->crs.tail,
               op->off_path);
-    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
-    ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
-    return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
+    STAT_EVENT(op->proc_id, CRS_MISS + use_oracle_target + 2 * op->off_path);
+    ASSERT(op->proc_id, !use_oracle_target || op->oracle_info.target != ADDR_INVALID);
+    return use_oracle_target ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
   bp_data->crs.tail = new_tail;
   bp_data->crs.depth--;
@@ -167,8 +170,8 @@ Addr bp_crs_pop(Bp_Data* bp_data, Op* op) {
             cf_type_names[op->uop->cf_type], op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
   mispred = PERFECT_CRS || op_target_unknown(op) ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
-  ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
-  return PERFECT_CRS ? op->oracle_info.target : addr;
+  ASSERT(op->proc_id, !use_oracle_target || op->oracle_info.target != ADDR_INVALID);
+  return use_oracle_target ? op->oracle_info.target : addr;
 }
 
 /**************************************************************************************/
@@ -230,6 +233,9 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
   Addr addr;
   uns new_tos = bp_data->crs.entries[bp_data->crs.tos].nos;
   Flag mispred;
+  // A wrong-path return has no target in the trace, so it is predicted as without PERFECT_CRS
+  const Flag use_oracle_target = PERFECT_CRS && !op_target_unknown(op);
+  ASSERT(op->proc_id, !op_target_unknown(op) || op->off_path);
 
   UNUSED(old_tos);
   ASSERT(bp_data->proc_id, bp_data->proc_id == op->proc_id);
@@ -250,10 +256,10 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
   if (bp_data->crs.depth == 0) {
     DEBUG_CRS(bp_data->proc_id, "UNDERFLOW  next:%d  tos: %d  offpath:%d\n", bp_data->crs.next, bp_data->crs.tos,
               op->off_path);
-    STAT_EVENT(op->proc_id, CRS_MISS + PERFECT_CRS + 2 * op->off_path);
+    STAT_EVENT(op->proc_id, CRS_MISS + use_oracle_target + 2 * op->off_path);
     STAT_EVENT(op->proc_id, CRS_UNDERFLOW_ON_PATH + op->off_path); /*CHECK EXCLUSIVE UNDERFLOW*/
-    ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
-    return PERFECT_CRS ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
+    ASSERT(op->proc_id, !use_oracle_target || op->oracle_info.target != ADDR_INVALID);
+    return use_oracle_target ? op->oracle_info.target : convert_to_cmp_addr(bp_data->proc_id, 0);
   }
 
   if (CRS_REALISTIC == 2)
@@ -277,8 +283,8 @@ Addr bp_crs_realistic_pop(Bp_Data* bp_data, Op* op) {
             op->off_path, hexstr64s(op->oracle_info.npc), addr != op->oracle_info.npc);
   mispred = PERFECT_CRS || op_target_unknown(op) ? 0 : addr != op->oracle_info.npc;
   STAT_EVENT(op->proc_id, CRS_MISS + !mispred + 2 * op->off_path);
-  ASSERT(op->proc_id, !PERFECT_CRS || op->oracle_info.target != ADDR_INVALID);
-  return PERFECT_CRS ? op->oracle_info.target : addr;
+  ASSERT(op->proc_id, !use_oracle_target || op->oracle_info.target != ADDR_INVALID);
+  return use_oracle_target ? op->oracle_info.target : addr;
 }
 
 /**************************************************************************************/
@@ -383,17 +389,22 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   /* Main BTB lookup (pred_func populates BTB hit/target fields as a side effect) */
   if (PERFECT_BTB) {
-    ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
-    if (BTB_L0_PRESENT) {
-      btb_pred_info->btb_l0_hit = TRUE;
-      btb_pred_info->btb_l0_target = op->oracle_info.target;
+    if (op_target_unknown(op)) {
+      // A wrong-path indirect branch or return has no target in the trace, so it is a miss
+      ASSERT(bp_data->proc_id, op->off_path);
+    } else {
+      ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
+      if (BTB_L0_PRESENT) {
+        btb_pred_info->btb_l0_hit = TRUE;
+        btb_pred_info->btb_l0_target = op->oracle_info.target;
+      }
+      if (BTB_L1_PRESENT) {
+        btb_pred_info->btb_l1_hit = TRUE;
+        btb_pred_info->btb_l1_target = op->oracle_info.target;
+      }
+      btb_pred_info->btb_main_hit = TRUE;
+      btb_pred_info->btb_main_target = op->oracle_info.target;
     }
-    if (BTB_L1_PRESENT) {
-      btb_pred_info->btb_l1_hit = TRUE;
-      btb_pred_info->btb_l1_target = op->oracle_info.target;
-    }
-    btb_pred_info->btb_main_hit = TRUE;
-    btb_pred_info->btb_main_target = op->oracle_info.target;
   } else {
     bp_data->bp_btb->pred_func(bp_data, op);
   }
@@ -870,6 +881,11 @@ Addr bp_ibtb_tc_tagged_pred(Bp_Data* bp_data, Op* op) {
   Addr target;
 
   if (PERFECT_IBP) {
+    if (op_target_unknown(op)) {
+      // A wrong-path indirect branch has no target in the trace, so there is no prediction
+      ASSERT(op->proc_id, op->off_path);
+      return 0;
+    }
     ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
     return op->oracle_info.target;
   }
@@ -979,6 +995,11 @@ Addr bp_ibtb_tc_tagless_pred(Bp_Data* bp_data, Op* op) {
   Addr tc_entry;
 
   if (PERFECT_IBP) {
+    if (op_target_unknown(op)) {
+      // A wrong-path indirect branch has no target in the trace, so there is no prediction
+      ASSERT(op->proc_id, op->off_path);
+      return 0;
+    }
     ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
     return op->oracle_info.target;
   }

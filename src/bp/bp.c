@@ -536,9 +536,9 @@ static Addr bp_predict_op_impl(Bp_Data* bp_data, Op* op, uns bp_id, uns br_num, 
       bp_pred_info->pred_global_hist = bp_data->global_hist;
 
       if (PERFECT_BP) {
-        ASSERT(op->proc_id, op->oracle_info.dir != DIR_INVALID);
-        bp_pred_info->pred = op->oracle_info.dir;
-        bp_pred_info->pred_orig = op->oracle_info.dir;
+        // A wrong-path branch has no outcome in the trace, so predict not taken
+        ASSERT(op->proc_id, op->oracle_info.dir != DIR_INVALID || op->off_path);
+        bp_pred_info->pred_orig = bp_pred_info->pred = op_dir_or_pred(op, NOT_TAKEN);
       } else {
         ASSERT(op->proc_id, !PERFECT_NT_BTB);  // currently not supported
         bp_pred_info->pred = pred_bp->pred_func(op, pred_level);

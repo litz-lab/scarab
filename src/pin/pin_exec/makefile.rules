@@ -61,6 +61,10 @@ SOURCE_OBJFILES := $(patsubst %.cc,$(OBJDIR)%.o,$(SOURCE_FILES))
 
 SCARAB_DIR ?= ../../
 
+# Pin 4 kits compile tools with their own wrappers (TOOL_CXX/TOOL_LINKER); Pin 3 kits use CXX/LINKER.
+PIN_CXX := $(or $(TOOL_CXX),$(CXX))
+PIN_LINKER := $(or $(TOOL_LINKER),$(LINKER))
+
 # Newer PIN/SDE kits add -Wno-dangling-pointer unconditionally (makefile.unix.config),
 # but that flag only exists in gcc >= 11; drop it on older gcc so the tool still builds.
 GCC_MAJOR := $(shell $(CXX) -dumpversion 2>/dev/null | cut -d. -f1)
@@ -81,7 +85,7 @@ PINPLAY_LINK_DEPS :=
 ifdef ENABLE_PINPLAY
 SDE_ROOT=$(PIN_ROOT)/sde-example
 PINPLAY_ROOT=$(PIN_ROOT)/pinplay
-TOOL_CXXFLAGS += -I$(SDE_ROOT)/include -I$(PINPLAY_ROOT)/include -DSDE_INIT -DPINPLAY -DENABLE_PINPLAY
+TOOL_CXXFLAGS += -I$(SDE_ROOT)/include -I$(PINPLAY_ROOT)/include -DSDE_INIT -DPINPLAY -DENABLE_PINPLAY -Wno-error=sign-compare
 # pinplay/sde listed twice to break their circular dependency (per SDE example)
 PINPLAY_LIBS=-L$(SDE_ROOT)/lib/$(TARGET) -L$(PINPLAY_ROOT)/$(TARGET) -lpinplay -lsde -lpinplay -lsde -lbz2 -lzlib
 PINPLAY_LINK_DEPS=$(PINPLAY_ROOT)/$(TARGET)/libpinplay.a $(SDE_ROOT)/lib/$(TARGET)/libsde.a
@@ -133,10 +137,10 @@ debug: objects libs dlls apps tools
 pin_exec: $(OBJDIR)pin_exec.so
 
 $(OBJDIR)%.o: $(COMMON_LIB_PATH)/%.cc $(BUILD_MODE_STAMP)
-	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MMD -DPIN_COMPILE
+	$(PIN_CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MMD -DPIN_COMPILE
 
 $(OBJDIR)%.o: %.cc $(BUILD_MODE_STAMP)
-	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MMD -DPIN_COMPILE
+	$(PIN_CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MMD -DPIN_COMPILE
 
 commonlibs: $(COMMON_LIB_OBJFILES)
 
@@ -144,12 +148,12 @@ commonlibs: $(COMMON_LIB_OBJFILES)
 # overriding rule in makefile.default.rules
 $(OBJDIR)pin_exec$(PINTOOL_SUFFIX): $(OBJDIR)pin_exec$(OBJ_SUFFIX) $(SOURCE_OBJFILES) commonlibs $(PINPLAY_LINK_DEPS)
 	$(info invoking link)
-	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $< $(SOURCE_OBJFILES) $(COMMON_LIB_OBJFILES) $(TOOL_LPATHS) $(PINPLAY_LIBS) $(TOOL_LIBS)
+	$(PIN_LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $< $(SOURCE_OBJFILES) $(COMMON_LIB_OBJFILES) $(TOOL_LPATHS) $(PINPLAY_LIBS) $(TOOL_LIBS)
 
 
 $(OBJDIR)pin_exec$(OBJ_SUFFIX):pin_exec.cpp $(BUILD_MODE_STAMP)
 	$(info invoking compile)
-	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MD -DPIN_COMPILE
+	$(PIN_CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< -MD -DPIN_COMPILE
 
 -include $(OBJDIR)pin_exec.d
 # Header-dependency tracking for the tool sources and the shared pin_lib objects, so that changing

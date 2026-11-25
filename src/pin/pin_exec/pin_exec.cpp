@@ -62,6 +62,7 @@
 #include "../pin_lib/decoder.h"
 #include "../pin_lib/message_queue_interface_lib.h"
 #include "../pin_lib/pin_scarab_common_lib.h"
+#undef THREADID  // pin_api_to_xed.h maps it to uint32_t; PIN callbacks need PIN's own type (int in Pin 4)
 
 /* ===================================================================== */
 
@@ -221,8 +222,7 @@ void insert_logging(const INS& ins) {
 void insert_check_for_magic_instructions(const INS& ins) {
   if(INS_IsXchg(ins) && INS_OperandReg(ins, 0) == REG_GCX &&
      INS_OperandReg(ins, 1) == REG_GCX) {
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)handle_scarab_marker,
-                   IARG_REG_VALUE, REG_RCX, IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)handle_scarab_marker, IARG_REG_VALUE, LEVEL_BASE::REG_RCX, IARG_END);
   }
 }
 
@@ -238,22 +238,20 @@ void insert_checks_for_control_flow(const INS& ins) {
   if(INS_IsRet(ins)) {
     INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_ret_control_ins), IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE,
                    IARG_END);
-  } else if(INS_IsBranchOrCall(ins)) {
-    if(INS_IsDirectBranchOrCall(ins)) {
+  } else if (INS_IsBranch(ins) || INS_IsCall(ins)) {
+    if (INS_IsDirectControlFlow(ins)) {
       if(INS_Category(ins) == XED_CATEGORY_COND_BR) {
-        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_nonret_control_ins),
-                       IARG_BRANCH_TAKEN, IARG_ADDRINT,
-                       INS_DirectBranchOrCallTargetAddress(ins), IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_nonret_control_ins), IARG_BRANCH_TAKEN, IARG_ADDRINT,
+                       INS_DirectControlFlowTargetAddress(ins), IARG_END);
       } else {
-        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_nonret_control_ins),
-                       IARG_BOOL, true, IARG_ADDRINT,
-                       INS_DirectBranchOrCallTargetAddress(ins), IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_nonret_control_ins), IARG_BOOL, true, IARG_ADDRINT,
+                       INS_DirectControlFlowTargetAddress(ins), IARG_END);
       }
-    } else if(INS_IsMemoryRead(ins)) {
+    } else if (INS_IsMemoryRead(ins)) {
       INS_InsertCall(ins, IPOINT_BEFORE,
                      AFUNPTR(check_nonret_control_mem_target), IARG_BOOL, true,
                      IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE, IARG_END);
-    } else if(INS_MaxNumRRegs(ins) > 0) {
+    } else if (INS_MaxNumRRegs(ins) > 0) {
       INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(check_nonret_control_ins),
                      IARG_BOOL, true, IARG_REG_VALUE, INS_RegR(ins, 0),
                      IARG_END);
@@ -268,7 +266,7 @@ void insert_checks_for_control_flow(const INS& ins) {
 
 void insert_branch_context_saves(const INS& ins) {
   // scarab control flow: branches, calls, rets, and REP string ops (CF_REP, one uid per iteration)
-  if (INS_IsRet(ins) || INS_IsBranchOrCall(ins) || INS_HasRealRep(ins)) {
+  if (INS_IsRet(ins) || INS_IsBranch(ins) || INS_IsCall(ins) || INS_HasRealRep(ins)) {
     if (INS_IsValidForIpointAfter(ins))
       INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)save_branch_context, IARG_CONST_CONTEXT, IARG_END);
     if (INS_IsValidForIpointTakenBranch(ins))
@@ -392,8 +390,8 @@ bool insert_merged_calls(const INS& ins) {
   UINT32 cf = PX_CF_NONE;
   if (INS_IsRet(ins)) {
     cf = PX_CF_RET;
-  } else if (INS_IsBranchOrCall(ins)) {
-    if (INS_IsDirectBranchOrCall(ins)) {
+  } else if (INS_IsBranch(ins) || INS_IsCall(ins)) {
+    if (INS_IsDirectControlFlow(ins)) {
       cf = INS_Category(ins) == XED_CATEGORY_COND_BR ? PX_CF_COND : PX_CF_DIRECT;
     } else if (INS_IsMemoryRead(ins)) {
       cf = PX_CF_MEM;
@@ -505,8 +503,8 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
 
 #ifdef DEBUG_PRINT
       stringstream ss;
-      if(INS_IsDirectBranchOrCall(ins)) {
-        ss << "0x" << hex << INS_DirectBranchOrCallTargetAddress(ins);
+      if (INS_IsDirectControlFlow(ins)) {
+        ss << "0x" << hex << INS_DirectControlFlowTargetAddress(ins);
       } else {
         ss << "(not a direct branch or call)";
       }

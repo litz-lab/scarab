@@ -39,7 +39,10 @@ whenever any assert fails.
 #ifndef __ASSERT_H__
 #define __ASSERT_H__
 
+#if __has_include(<execinfo.h>)
 #include <execinfo.h>
+#define SCARAB_HAS_BACKTRACE 1
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -57,6 +60,9 @@ whenever any assert fails.
 /* Prints the current call stack of Scarab. For the function names to be
  * printed, Scarab should be linked with -rdynamic flag. */
 inline void print_backtrace(void) {
+#ifndef SCARAB_HAS_BACKTRACE
+  return;  // no backtrace() in this runtime (e.g. PIN's)
+#else
   void* array[30];
   char** strings;
   size_t size = backtrace(array, 30);
@@ -67,6 +73,7 @@ inline void print_backtrace(void) {
     fprintf(mystderr, "%s\n", strings[i]);
 
   free(strings);
+#endif
 }
 
 /**************************************************************************************/

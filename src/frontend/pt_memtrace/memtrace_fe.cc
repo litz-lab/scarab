@@ -75,9 +75,6 @@ uint64_t ins_id_fetched[MAX_NUM_PROCS] = {0};
 uint64_t prior_tid[MAX_NUM_PROCS] = {0};
 uint64_t prior_pid[MAX_NUM_PROCS] = {0};
 
-Flag roi_dump_began = FALSE;
-Counter roi_dump_ID = 0;
-
 /**************************************************************************************/
 /* Private Functions */
 

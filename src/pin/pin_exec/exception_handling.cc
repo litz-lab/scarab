@@ -102,6 +102,11 @@ bool signal_handler(THREADID tid, INT32 sig, CONTEXT* ctxt, bool hasHandler,
             if(checkpoints[idx].uid == uid) {
               found_uid                                 = true;
               checkpoints[idx].unretireable_instruction = true;
+              // it never reaches IPOINT_AFTER: execution resumes at next_eip with this context
+              if (checkpoints[idx].ctxt_kind == CTXT_NONE) {
+                PIN_SaveContext(ctxt, &checkpoints[idx].ctxt);
+                checkpoints[idx].ctxt_kind = CTXT_POST;
+              }
               break;
             }
 

@@ -1,13 +1,11 @@
 #include "trace_fe.h"
 
 #include <cstring>
-#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
-#include <optional>
 
 #include "bp/bp.param.h"
 
@@ -44,14 +42,8 @@ static ctype_pin_inst next_onpath_pi[MAX_NUM_PROCS];
 static ctype_pin_inst next_offpath_pi[MAX_NUM_PROCS][MAX_NUM_BPS];
 static bool off_path_mode[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 static uint64_t off_path_addr[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
-
-/* An on-path record read ahead of the core (by the lookahead buffer) */
-struct DeferredReplayUpdate {
-  uint64_t read_by_inst_uid;  // inst whose last-uop fetch read this record, which is the next inst's
-  ctype_pin_inst record;
-};
-// the replay buffer holds exactly the records read by the insts the core has consumed
-static std::deque<DeferredReplayUpdate> deferred_replay_updates[MAX_NUM_PROCS];
+// inst_uid of the on-path op the wrong path diverged at: its code is all the core has fetched
+static uint64_t off_path_uid[MAX_NUM_PROCS][MAX_NUM_BPS] = {};
 
 /* Per-core circular buffer state */
 struct TraceBufState {
@@ -64,10 +56,10 @@ static TraceBufState trace_buf_state[MAX_NUM_PROCS];
 
 const int CLINE = ~0x3F;
 
-/* Stamped into every memory address of a replayed (off-path) instruction.
-   Deliberately non-canonical so any consumer of a replayed address fails loudly
+/* Stamped into every memory address of a wrong-path instruction.
+   Deliberately non-canonical so any consumer of such an address fails loudly
    rather than silently inheriting on-path oracle state. */
-static const uint64_t REPLAY_BUFFER_POISON_VA = 0xCAFEBABEDEADBEAFULL;
+static const uint64_t WRONG_PATH_POISON_VA = 0xCAFEBABEDEADBEAFULL;
 
 extern uint64_t ins_id[MAX_NUM_PROCS];
 extern uint64_t ins_id_fetched[MAX_NUM_PROCS];
@@ -102,45 +94,30 @@ void buf_map_remove(uns proc_id) {
   state.rdptr = (state.rdptr + 1) % TRACE_BUF_SIZE;
 }
 
-// Rebuild the last on-path instance of a PC from its decode-cache entry: the decoded
-// instruction, or the PT fake that replaced it, plus the recorded per-instance fields.
-static void replay_instance(ctype_pin_inst* inst, uint64_t pc, const DecodedInst* d) {
-  if (d->replay.fake == WPNM_FAKE_NOP) {
-    *inst = create_dummy_nop(pc, WPNM_FAKE_NOP, d->inst.size);
-  } else if (d->replay.fake == WPNM_FAKE_JMP) {
-    *inst = create_dummy_jump(pc, d->replay.branch_target, XED_ICLASS_JMP);
-  } else {
-    init_ctype_pin_inst(inst);
-    inst->st = d->inst;
-    inst->decoded = const_cast<DecodedInst*>(d);
-    inst->st.encoding_is_new = d->replay.encoding_is_new;
-    inst->st.num_ld = d->replay.num_ld;
-    inst->st.num_st = d->replay.num_st;
-  }
-  inst->st.instruction_addr = pc;
-  inst->st.branch_target = d->replay.branch_target;
-  inst->instruction_next_addr = d->replay.next_addr;
-  inst->inst_uid = d->replay.inst_uid;
-  inst->actually_taken = d->replay.taken;
-  inst->exit = d->replay.exit;
-  inst->last_inst_from_trace = d->replay.last_inst_from_trace;
-  inst->fetched_instruction = d->replay.fetched;
-  for (uns i = 0; i < MAX_LD_NUM; i++)
-    inst->ld_vaddr[i] = REPLAY_BUFFER_POISON_VA;
-  for (uns i = 0; i < MAX_ST_NUM; i++)
-    inst->st_vaddr[i] = REPLAY_BUFFER_POISON_VA;
-}
-
-void off_path_generate_inst(uns proc_id, uint64_t *off_path_addr, ctype_pin_inst *inst) {
-  const DecodedInst* d = decode_cache_replay_entry(proc_id, *off_path_addr);
-  if (d) {
-    replay_instance(inst, *off_path_addr, d);
-    (*off_path_addr) += inst->st.size;
-    DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", inst->st.instruction_addr, inst->st.size);
-  } else {
-    *inst = create_dummy_nop(*off_path_addr, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
+// A wrong-path instruction at the PC, built from the PC's decode-cache entry if the core had fetched
+// it on the path by inst_uid: branches keep their static target, and memory addresses are poisoned.
+void off_path_generate_inst(uns proc_id, uint64_t inst_uid, uint64_t* off_path_addr, ctype_pin_inst* inst) {
+  const uint64_t pc = *off_path_addr;
+  DecodedInst* d = decode_cache_find_fetched(proc_id, pc, inst_uid);
+  if (!d) {
+    *inst = create_dummy_nop(pc, WPNM_REASON_REDIRECT_TO_NOT_INSTRUMENTED, DUMMY_NOP_SIZE);
     (*off_path_addr) += DUMMY_NOP_SIZE;
+    return;
   }
+  init_ctype_pin_inst(inst);
+  inst->st = d->inst;
+  inst->decoded = d;
+  inst->st.instruction_addr = pc;
+  // unconditional direct branches are always taken; everything else falls through
+  const bool jumps = (d->inst.cf_type == CF_BR || d->inst.cf_type == CF_CALL) && d->inst.branch_target;
+  inst->actually_taken = jumps;
+  inst->instruction_next_addr = jumps ? d->inst.branch_target : pc + d->inst.size;
+  for (uns i = 0; i < MAX_LD_NUM; i++)
+    inst->ld_vaddr[i] = WRONG_PATH_POISON_VA;
+  for (uns i = 0; i < MAX_ST_NUM; i++)
+    inst->st_vaddr[i] = WRONG_PATH_POISON_VA;
+  (*off_path_addr) += d->inst.size;
+  DEBUG(proc_id, "Generate off-path inst:%lx inst_size:%i ", pc, d->inst.size);
 }
 
 void trace_buf_init() {
@@ -187,64 +164,6 @@ int trace_read(int proc_id, ctype_pin_inst *next_onpath_pi) {
   return ret;
 }
 
-// Records pi as the last on-path instance of its PC, for wrong-path replay
-static void update_replay_buffer(uns proc_id, const ctype_pin_inst& pi) {
-  if (pi.st.is_trace_patch)  // synthetic patch records stay out of the replay buffer
-    return;
-  uint64_t addr = pi.st.instruction_addr;
-  // The entry of this instance's encoding records it; a PT fake records into the decoded
-  // instruction it replaced. last holds the PC's previous on-path instance.
-  DecodedInst* d = pi.st.fake_inst ? decode_cache_find(proc_id, addr) : pi.decoded;
-  ASSERT(proc_id, d);
-  DecodedInst*& replay = decode_cache_replay_slot(proc_id, addr);
-  const DecodedInst* last = replay;
-  // A PT fake carries no instruction bytes; the decoded instruction does.
-  uint64_t last_lsb = last && !last->replay.fake ? last->inst.inst_binary_lsb : 0;
-  uint64_t last_msb = last && !last->replay.fake ? last->inst.inst_binary_msb : 0;
-  if (!last) {
-  } else if (pi.st.encoding_is_new) {
-    STAT_EVENT(proc_id, INST_MAP_UPDATE_ENCODING);
-  } else if (pi.st.inst_binary_lsb != last_lsb || pi.st.inst_binary_msb != last_msb) {
-    DEBUG(proc_id, "Previously seen PC references new instruction addr:%lx inst_size:%i lsb:%lx msb:%lx\n ", addr,
-          pi.st.size, pi.st.inst_binary_lsb, pi.st.inst_binary_msb);
-    // Handle jitted code
-    STAT_EVENT(proc_id, INST_MAP_UPDATE_JITTED);
-  } else if (pi.instruction_next_addr != last->replay.next_addr) {
-    STAT_EVENT(proc_id, INST_MAP_UPDATE_NPC_INV + pi.st.op_type);
-  } else {
-    // replayed addresses are poisoned, so an instance never matches them
-    STAT_EVENT(proc_id, INST_MAP_UPDATE_MEM_INV + pi.st.op_type);
-  }
-  if (pi.st.fake_inst) {
-    ASSERT(proc_id, pi.st.fake_inst_reason == WPNM_FAKE_NOP || pi.st.fake_inst_reason == WPNM_FAKE_JMP);
-    ASSERT(proc_id, pi.st.size == (pi.st.fake_inst_reason == WPNM_FAKE_NOP ? d->inst.size : 5));
-  }
-  d->replay.fake = pi.st.fake_inst ? pi.st.fake_inst_reason : 0;
-  d->replay.taken = pi.actually_taken;
-  d->replay.exit = pi.exit;
-  d->replay.last_inst_from_trace = pi.last_inst_from_trace;
-  d->replay.fetched = pi.fetched_instruction;
-  d->replay.encoding_is_new = pi.st.encoding_is_new;
-  d->replay.num_ld = pi.st.num_ld;
-  d->replay.num_st = pi.st.num_st;
-  d->replay.next_addr = pi.instruction_next_addr;
-  d->replay.branch_target = pi.st.branch_target;
-  d->replay.inst_uid = pi.inst_uid;
-  replay = d;
-}
-
-// Applies the records read by the insts up to inst_uid; returns the reader of the last record applied
-static std::optional<uint64_t> apply_replay_updates_up_to(uns proc_id, uns64 inst_uid) {
-  std::optional<uint64_t> last_reader;
-  auto& deferred = deferred_replay_updates[proc_id];
-  while (!deferred.empty() && deferred.front().read_by_inst_uid <= inst_uid) {
-    last_reader = deferred.front().read_by_inst_uid;
-    update_replay_buffer(proc_id, deferred.front().record);
-    deferred.pop_front();
-  }
-  return last_reader;
-}
-
 // The trace holds no wrong-path outcomes: a conditional branch's direction and an indirect branch's
 // target (and so their next PC) are unknown (op_oracle_known).
 static void invalidate_wrong_path_oracle(Op* op) {
@@ -273,7 +192,9 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
   uint64_t *off_path_addr_ = &off_path_addr[proc_id][bp_id];
   if (uop_generator_get_bom(proc_id)) {
     if (!off_path_mode_) {
+      const uint64_t pc = next_onpath_pi[proc_id].st.instruction_addr;  // the trace PC, before decode converts it
       uop_generator_get_uop(proc_id, op, &next_onpath_pi[proc_id]);
+      decode_cache_note_fetch(proc_id, pc, op->inst_uid);
     } else {
       uop_generator_get_uop(proc_id, op, next_offpath_pi_);
     }
@@ -294,14 +215,9 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
         trace_read_done[proc_id] = TRUE;
         reached_exit[proc_id] = TRUE;
         op->exit = TRUE;
-      } else if (LOOKAHEAD_BUF_SIZE) {
-        // read ahead of the core: applied once the core consumes the inst that read it
-        deferred_replay_updates[proc_id].push_back({op->inst_uid, next_onpath_pi[proc_id]});
-      } else {
-        update_replay_buffer(proc_id, next_onpath_pi[proc_id]);
       }
     } else {
-      off_path_generate_inst(proc_id, off_path_addr_, next_offpath_pi_);
+      off_path_generate_inst(proc_id, off_path_uid[proc_id][bp_id], off_path_addr_, next_offpath_pi_);
     }
   }
   DEBUG(proc_id, "Fetch op is_on_path:%i on_path:%lx off_path:%lx\n", off_path_mode_,
@@ -309,9 +225,6 @@ void ext_trace_fetch_op(uns proc_id, uns bp_id, Op *op) {
 }
 
 void ext_trace_consume(uns proc_id, uns64 inst_uid) {
-  const std::optional<uint64_t> last_reader = apply_replay_updates_up_to(proc_id, inst_uid);
-  // The consumed FT's last inst read the next record, unless the trace ended there
-  ASSERT(proc_id, last_reader == inst_uid || reached_exit[proc_id]);
 }
 
 Flag ext_trace_can_fetch_op(uns proc_id, uns bp_id) {
@@ -328,9 +241,13 @@ void ext_trace_redirect(uns proc_id, uns bp_id, uns64 inst_uid, Addr fetch_addr)
   // handled entirely Scarab-side via state = INACTIVE, so the previous
   // (fetch_addr == 0) "stop the secondary stream" path is no longer reached.
   ASSERT(proc_id, fetch_addr);
+  // a redirect within the wrong path (its ops have no inst_uid) keeps where it diverged
+  if (!off_path_mode[proc_id][bp_id])
+    off_path_uid[proc_id][bp_id] = inst_uid;
   off_path_mode[proc_id][bp_id] = true;
   off_path_addr[proc_id][bp_id] = fetch_addr;
-  off_path_generate_inst(proc_id, &off_path_addr[proc_id][bp_id], &next_offpath_pi[proc_id][bp_id]);
+  off_path_generate_inst(proc_id, off_path_uid[proc_id][bp_id], &off_path_addr[proc_id][bp_id],
+                         &next_offpath_pi[proc_id][bp_id]);
   DEBUG(proc_id, "Redirect on-path:%lx off-path:%lx", next_onpath_pi[proc_id].st.instruction_addr,
         next_offpath_pi[proc_id][bp_id].st.instruction_addr);
 }
@@ -354,8 +271,6 @@ void ext_trace_recover(uns proc_id, uns bp_id, uns64 inst_uid) {
 }
 
 void ext_trace_retire(uns proc_id, uns64 inst_uid) {
-  // functional warmup (uop_sim) reports consumption only through retire
-  apply_replay_updates_up_to(proc_id, inst_uid);
 }
 
 Addr ext_trace_next_fetch_addr(uns proc_id) {

@@ -81,14 +81,18 @@ extern Scarab_To_Pin_Msg saved_cmd;
 extern bool              excp_rewind_msg;
 // Lazy context capture: batches end at control-flow ops, and a redirect captures the live context
 // (the redirected op's post-execution state) instead of every branch saving one.
-extern bool lazy_ctxt;
-extern bool redirect_pending;
+extern bool              lazy_ctxt;
+extern bool              redirect_pending;
 extern Scarab_To_Pin_Msg pending_redirect;
 // scarab asked for ops past an undecided control-flow op: capture its post-execution state before running on
-extern bool capture_pending;
-extern UINT64 capture_uid;
-// the current instruction carries the capture/redirect If/Then (is_capture_site)
-extern bool at_capture_site;
+extern bool              capture_pending;
+extern UINT64            capture_uid;
+// the current instruction carries the capture/redirect If/Then (a basic-block head or a REP instruction)
+extern bool              at_capture_site;
+// trace-compile diagnostics: what preceded the next trace compile
+enum Trace_Cause { TC_FLOW, TC_EXECUTE_AT, TC_SIGNAL, TC_NUM };
+extern int trace_cause;
+extern UINT64 execute_at_calls;
 extern bool              found_syscall;
 extern bool              excp_ff;
 

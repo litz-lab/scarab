@@ -381,6 +381,7 @@ void redirect(CONTEXT* ctx) {
   std::cout << "About to redirect to " << std::hex << start_rip << "\n";
   PIN_SetContextRegval(ctx, REG_INST_PTR, (const UINT8*)(&start_rip));
   PIN_RemoveInstrumentation();
+  trace_cause = TC_EXECUTE_AT, execute_at_calls++;
   PIN_ExecuteAt(ctx);
 }
 

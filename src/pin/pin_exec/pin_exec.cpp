@@ -52,9 +52,9 @@
 #undef WARNING
 
 #include "analysis_functions.h"
+#include "main_loop.h"
 #include "exception_handling.h"
 #include "globals.h"
-#include "main_loop.h"
 #include "read_mem_map.h"
 #include "scarab_interface.h"
 #include "utils.h"
@@ -342,8 +342,7 @@ void insert_processing_for_nonsyscall_instructions(const INS& ins) {
 }
 
 // Merged per-instruction calls. Flag bits beyond the decoder's (decoder.h): logging's fall-through and
-// taken inputs, before_ins_one_mem, a lazy-capture site, the control-flow check kind, and the previous
-// instruction's folded AFTER.
+// taken inputs, before_ins_one_mem, and the control-flow check kind.
 enum {
   PX_FALLTHROUGH = 1 << 4,
   PX_LOG_TAKEN = 1 << 5,
@@ -423,8 +422,9 @@ bool merged_ins(const INS& ins) {
 // straight-line code the next instruction runs right after ins, with ins's destinations written.
 bool after_folded(const INS& ins) {
   const INS next = INS_Next(ins);
-  return INS_Valid(next) && merged_ins(ins) && merged_ins(next) && INS_HasFallThrough(ins) && !INS_IsControlFlow(ins) &&
-         !INS_HasRealRep(ins) && INS_IsValidForIpointAfter(ins) && pin_decoder_dsts_fit_slots(INS_Address(ins));
+  return INS_Valid(next) && merged_ins(ins) && merged_ins(next) && INS_HasFallThrough(ins) &&
+         !INS_IsControlFlow(ins) && !INS_HasRealRep(ins) && INS_IsValidForIpointAfter(ins) &&
+         pin_decoder_dsts_fit_slots(INS_Address(ins));
 }
 
 // One BEFORE and one AFTER call for an ordinary instruction (PIN's JIT cost grows with the number of
@@ -496,7 +496,23 @@ bool insert_merged_calls(const INS& ins) {
   return true;
 }
 
+// trace-compile diagnostics (sim phase: after hyper fast-forward)
+struct Head_Stat { UINT32 compiles, last_ins; };
+std::unordered_map<ADDRINT, Head_Stat> trace_heads;
+UINT64 tc_compiles[TC_NUM][2], tc_ins[TC_NUM][2];  // [cause][recompile]
+UINT64 tc_same_shape, tc_new_shape;  // recompiles with the previous compile's instruction count, or another
+
 void instrumentation_func_per_trace(TRACE trace, void* v) {
+  if (!hyper_ff && started) {
+    Head_Stat& h = trace_heads[TRACE_Address(trace)];
+    const bool again = h.compiles++ > 0;
+    if (again)
+      (h.last_ins == TRACE_NumIns(trace) ? tc_same_shape : tc_new_shape)++;
+    h.last_ins = TRACE_NumIns(trace);
+    tc_compiles[trace_cause][again]++;
+    tc_ins[trace_cause][again] += TRACE_NumIns(trace);
+    trace_cause = TC_FLOW;
+  }
 #ifdef DEBUG_PRINT
   stringstream instructions_ss;
 
@@ -600,6 +616,25 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
 void Fini(INT32 code, void* v) {
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "Fini reached, app exit code=%d\n.", code);
+  static const char* cause[TC_NUM] = {"flow", "execute_at", "signal"};
+  for (int c = 0; c < TC_NUM; c++)
+    *out << "TRACE_COMPILES " << cause[c] << " first " << tc_compiles[c][0] << " (" << tc_ins[c][0] << " ins) again "
+         << tc_compiles[c][1] << " (" << tc_ins[c][1] << " ins)" << endl;
+  *out << "EXECUTE_AT_CALLS " << execute_at_calls << endl;
+  *out << "TRACE_HEADS " << trace_heads.size() << " recompiles same_shape " << tc_same_shape << " new_shape "
+       << tc_new_shape << endl;
+  std::vector<std::pair<UINT32, ADDRINT>> top;
+  UINT32 hist[6] = {};  // heads compiled 1, 2, 3-4, 5-8, 9-16, >16 times
+  for (auto& e : trace_heads) {
+    top.push_back({e.second.compiles, e.first});
+    const UINT32 c = e.second.compiles;
+    hist[c <= 1 ? 0 : c <= 2 ? 1 : c <= 4 ? 2 : c <= 8 ? 3 : c <= 16 ? 4 : 5]++;
+  }
+  *out << "TRACE_HEAD_HIST 1:" << hist[0] << " 2:" << hist[1] << " 3-4:" << hist[2] << " 5-8:" << hist[3]
+       << " 9-16:" << hist[4] << " >16:" << hist[5] << endl;
+  std::sort(top.rbegin(), top.rend());
+  for (size_t i = 0; i < top.size() && i < 8; i++)
+    *out << "TRACE_TOP " << std::hex << top[i].second << std::dec << " " << top[i].first << endl;
   *out << "End of program reached, disconnect from Scarab.\n" << endl;
   scarab->disconnect();
   *out << "Pintool Fini Reached.\n" << endl;
@@ -637,7 +672,7 @@ int main(int argc, char* argv[]) {
 
   heartbeat_enabled = KnobHeartbeatEnabled.Value();
   max_buffer_size   = KnobMaxBufferSize.Value();
-  lazy_ctxt = KnobLazyCtxt.Value();
+  lazy_ctxt         = KnobLazyCtxt.Value();
 
   fast_forward_count = KnobFastForwardCount.Value();
   fast_forward_to_pin_start =

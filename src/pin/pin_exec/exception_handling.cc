@@ -74,6 +74,7 @@ bool dummy_handler(THREADID tid, INT32 sig, CONTEXT* ctxt, bool hasHandler,
 
 bool signal_handler(THREADID tid, INT32 sig, CONTEXT* ctxt, bool hasHandler,
                     const EXCEPTION_INFO* pExceptInfo, void* v) {
+  trace_cause = TC_SIGNAL;
   ADDRINT curr_eip;
   PIN_GetContextRegval(ctxt, REG_INST_PTR, (UINT8*)&curr_eip);
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,

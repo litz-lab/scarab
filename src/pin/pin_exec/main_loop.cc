@@ -26,18 +26,7 @@
 #include "../pin_lib/decoder.h"
 
 namespace {
-// The checkpoint index of uid, which must still be checkpointed.
-INT64 checkpoint_index(UINT64 uid) {
-  ASSERTM(
-      0,
-      !checkpoints.empty() && checkpoints[checkpoints.get_head_index()].uid <= uid && uid <= checkpoints.get_tail().uid,
-      "uid %" PRIu64 " not checkpointed\n", uid);
-  INT64 idx = checkpoints.get_tail_index();
-  while (checkpoints[idx].uid != uid)
-    idx--;
-  return idx;
-}
-
+INT64 checkpoint_index(UINT64 uid);
 void undo_mem(const ProcState& undo_state) {
   for(uint i = 0; i < undo_state.num_mem_state; i++) {
     void*  write_addr = (void*)undo_state.mem_state_list[i].mem_addr;
@@ -78,6 +67,7 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
         return;
       } else if (post && !on_wrongpath_nop_mode) {
         ASSERTM(0, enter_ff, "Recover before uid %" PRIu64 " needs a pre-execution context\n", uid);
+        trace_cause = TC_EXECUTE_AT, execute_at_calls++;
         PIN_ExecuteAt(&last_ctxt);
         ASSERTM(0, false, "PIN_ExecuteAt did not redirect execution.\n");
       } else {
@@ -93,6 +83,7 @@ void recover_to_past_checkpoint(UINT64 uid, bool is_redirect_recover,
           } else {
             idx = checkpoints.remove_from_cir_buf_tail();
           }
+          trace_cause = TC_EXECUTE_AT, execute_at_calls++;
           PIN_ExecuteAt(&last_ctxt);
           ASSERTM(0, false, "PIN_ExecuteAt did not redirect execution.\n");
         } else {
@@ -136,6 +127,7 @@ void redirect_to_inst(ADDRINT inst_addr, UINT64 uid) {
   if(on_wrongpath_nop_mode) {
     next_eip = ADDR_MASK(inst_addr);
   } else {
+    trace_cause = TC_EXECUTE_AT, execute_at_calls++;
     PIN_ExecuteAt(&last_ctxt);
     ASSERTM(0, false, "PIN_ExecuteAt did not redirect execution.\n");
   }
@@ -216,7 +208,7 @@ bool do_fe_redirect(Scarab_To_Pin_Msg& cmd) {
   buffer_sentinel         = false;
   if (lazy_ctxt && checkpoints[checkpoint_index(cmd.inst_uid)].ctxt_kind == CTXT_NONE &&
       !checkpoints[checkpoint_index(cmd.inst_uid)].wrongpath_nop_mode) {
-    // PIN waits right after the op, at a capture site: do_pending_redirect captures the live context
+    // PIN waits right after the op (always a basic-block head): do_pending_redirect captures the live context
     ASSERTM(0, at_capture_site, "Redirect to uid %" PRIu64 " without a context, away from a capture site\n",
             cmd.inst_uid);
     redirect_pending = true;
@@ -240,18 +232,30 @@ bool do_fe_redirect(Scarab_To_Pin_Msg& cmd) {
 
 void finish_before_ins_all(bool from_syscall);  // analysis_functions.cc
 
+// The redirected control-flow op ended its batch (scarab_buffer_full), so PIN has not executed past it:
+// the live context is its post-execution state, which a later recovery to it resumes from.
 namespace {
-// The control-flow op ended its batch (scarab_buffer_ends_at_cf) and nothing after it has executed
-// (ASSERTed), so the live context is its post-execution state, which a later recovery resumes from.
+INT64 checkpoint_index(UINT64 uid) {
+  ASSERTM(0, !checkpoints.empty() && checkpoints[checkpoints.get_head_index()].uid <= uid &&
+               uid <= checkpoints.get_tail().uid,
+          "uid %" PRIu64 " not checkpointed (%s, head uid %" PRIu64 ", tail uid %" PRIu64 ", capture %d redirect %d)\n",
+          uid, checkpoints.empty() ? "empty" : "range", checkpoints.empty() ? 0 : checkpoints[checkpoints.get_head_index()].uid,
+          checkpoints.empty() ? 0 : checkpoints.get_tail().uid, capture_pending, redirect_pending);
+  INT64 idx = checkpoints.get_tail_index();
+  while (checkpoints[idx].uid != uid)
+    idx--;  // CirBuf asserts on an index below the head: the uid must still be checkpointed
+  return idx;
+}
+
+// Nothing after it has executed (ASSERTed), so the live context is the op's post-execution state.
 // tail_unexecuted: the current instruction already has its checkpoint but has not run yet.
 void capture_post_context(INT64 idx, const CONTEXT* ctxt, bool tail_unexecuted) {
   ProcState& rec = checkpoints[idx];
   if (rec.ctxt_kind != CTXT_NONE || rec.wrongpath_nop_mode)
     return;
   for (INT64 i = idx + 1; i <= checkpoints.get_tail_index(); i++)
-    ASSERTM(0,
-            checkpoints[i].wrongpath_nop_mode || checkpoints[i].ctxt_kind == CTXT_PRE ||
-                (tail_unexecuted && i == checkpoints.get_tail_index()),
+    ASSERTM(0, checkpoints[i].wrongpath_nop_mode || checkpoints[i].ctxt_kind == CTXT_PRE ||
+                 (tail_unexecuted && i == checkpoints.get_tail_index()),
             "Context for uid %" PRIu64 ": uid %" PRIu64 " after it already executed\n", rec.uid, checkpoints[i].uid);
   PIN_SaveContext(ctxt, &rec.ctxt);
   rec.ctxt_kind = CTXT_POST;
@@ -267,7 +271,7 @@ void do_pending_redirect(const CONTEXT* ctxt) {
     return;
   redirect_pending = false;
   const UINT64 uid = pending_redirect.inst_uid;
-  const INT64 idx = checkpoint_index(uid);
+  const INT64  idx = checkpoint_index(uid);
   capture_post_context(idx, ctxt, false);
   redirect_to_inst(pending_redirect.inst_addr, uid);  // PIN_ExecuteAt unless the target is in WPNM
   // WPNM: this instruction does not execute; continue as its deferred analysis call would have
@@ -279,14 +283,16 @@ void do_pending_redirect(const CONTEXT* ctxt) {
 }
 
 void main_loop() {
+  trace_cause = TC_FLOW;  // diagnostics: execution reached analysis code
   bool buffer_ready                    = false;
   bool syscall_has_been_sent_to_scarab = false;
   bool have_consumed_op                = false;
   bool need_scarab_cmd                 = false;
   // lazy_ctxt: a batch ending at a control-flow op was sent; do not run past it until scarab redirects
   // or asks for more ops (it passed the op)
-  bool awaiting_cf_decision = false;
-  UINT64 undecided_cf_uid = 0;
+  bool   awaiting_cf_decision = false;
+  UINT64 undecided_cf_uid     = 0;
+  compressed_op undecided_op  = {};
 
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "main loop next_eip=%" PRIx64 "\n", (uint64_t)next_eip);
@@ -319,10 +325,9 @@ void main_loop() {
       // dummy jump already has its context, a WPNM record needs none
       if (awaiting_cf_decision && checkpoints[checkpoint_index(undecided_cf_uid)].ctxt_kind == CTXT_NONE &&
           !checkpoints[checkpoint_index(undecided_cf_uid)].wrongpath_nop_mode) {
-        ASSERTM(0, at_capture_site, "Capture for uid %" PRIu64 " away from a capture site, eip %" PRIx64 "\n",
-                undecided_cf_uid, (uint64_t)next_eip);
+        ASSERTM(0, at_capture_site, "Capture for uid %" PRIu64 " away from a capture site, eip %" PRIx64 " op %s @%" PRIx64 " fake %d wp %d\n", undecided_cf_uid, (uint64_t)next_eip, undecided_op.st.pin_iclass, (uint64_t)undecided_op.st.instruction_addr, (int)undecided_op.st.fake_inst, (int)on_wrongpath);
         capture_pending = true;
-        capture_uid = undecided_cf_uid;
+        capture_uid     = undecided_cf_uid;
       }
       awaiting_cf_decision = false;
     } else if(cmd.type == FE_NULL) {
@@ -335,13 +340,13 @@ void main_loop() {
     if(send_buffer_to_scarab) {
       awaiting_cf_decision = scarab_buffer_ends_at_cf() && !pending_syscall;
       if (awaiting_cf_decision)
-        undecided_cf_uid = scarab_op_buffer.back().inst_uid;
+        undecided_cf_uid = scarab_op_buffer.back().inst_uid, undecided_op = scarab_op_buffer.back();
       scarab_send_buffer();
       pending_fetch_op                = false;
       syscall_has_been_sent_to_scarab = pending_syscall;
     }
 
-    if (have_consumed_op && !pending_syscall && !scarab_buffer_full() && !awaiting_cf_decision)
+    if(have_consumed_op && !pending_syscall && !scarab_buffer_full() && !awaiting_cf_decision)
       break;
 
     if(have_consumed_op)

@@ -191,8 +191,9 @@ class Pin:
 
   def __get_pin_program_command(self):
     # one basic block per JIT region: PIN register-allocates multi-block regions far more slowly (about 2x
-    # exec speed on gcc), and overlapping multi-block traces recompile the same code
-    self.cmd = "{pin} -xyzzy -region_max_bbls 1 -mt 0 -t {pin_tool} -socket_path {socket} -core_id {core_id} {additional_args} -- {program_command}".format(
+    # exec speed on gcc), and overlapping multi-block traces recompile the same code. Unlimited regbindings cache:
+    # PIN compiles a trace per entry register binding, and evicting bindings recompiled hot traces ~5x on gcc
+    self.cmd = "{pin} -xyzzy -region_max_bbls 1 -regbindings_cache_limit 0 -mt 0 -t {pin_tool} -socket_path {socket} -core_id {core_id} {additional_args} -- {program_command}".format(
         pin=args.pin,
         pin_tool=args.frontend_pin_tool,
         socket=self.socket_path,

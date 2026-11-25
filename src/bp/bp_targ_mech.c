@@ -389,22 +389,20 @@ void bp_predict_btb(Bp_Data* bp_data, Op* op) {
 
   /* Main BTB lookup (pred_func populates BTB hit/target fields as a side effect) */
   if (PERFECT_BTB) {
-    if (op_target_unknown(op)) {
-      // A wrong-path indirect branch or return has no target in the trace, so it is a miss
-      ASSERT(bp_data->proc_id, op->off_path);
-    } else {
-      ASSERT(bp_data->proc_id, op->oracle_info.target != ADDR_INVALID);
-      if (BTB_L0_PRESENT) {
-        btb_pred_info->btb_l0_hit = TRUE;
-        btb_pred_info->btb_l0_target = op->oracle_info.target;
-      }
-      if (BTB_L1_PRESENT) {
-        btb_pred_info->btb_l1_hit = TRUE;
-        btb_pred_info->btb_l1_target = op->oracle_info.target;
-      }
-      btb_pred_info->btb_main_hit = TRUE;
-      btb_pred_info->btb_main_target = op->oracle_info.target;
+    // A wrong-path indirect branch or return has no target in the trace, so it hits with the fall-through target
+    ASSERT(bp_data->proc_id, !op_target_unknown(op) || op->off_path);
+    const Addr perfect_target = op_target_unknown(op) ? pc_plus_offset : op->oracle_info.target;
+    ASSERT(bp_data->proc_id, perfect_target != ADDR_INVALID);
+    if (BTB_L0_PRESENT) {
+      btb_pred_info->btb_l0_hit = TRUE;
+      btb_pred_info->btb_l0_target = perfect_target;
     }
+    if (BTB_L1_PRESENT) {
+      btb_pred_info->btb_l1_hit = TRUE;
+      btb_pred_info->btb_l1_target = perfect_target;
+    }
+    btb_pred_info->btb_main_hit = TRUE;
+    btb_pred_info->btb_main_target = perfect_target;
   } else {
     bp_data->bp_btb->pred_func(bp_data, op);
   }

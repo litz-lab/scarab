@@ -138,8 +138,8 @@ void pin_decoder_insert_analysis_functions(const INS& ins) {
   info->st.instruction_addr = INS_Address(ins);
   // Note: should be overwritten for a taken control flow instruction
   info->instruction_next_addr = INS_NextAddress(ins);
-  if(INS_IsDirectBranchOrCall(ins)) {
-    info->st.branch_target = INS_DirectBranchOrCallTargetAddress(ins);
+  if (INS_IsDirectControlFlow(ins)) {
+    info->st.branch_target = INS_DirectControlFlowTargetAddress(ins);
   }
 
   if(INS_IsVgather(ins) || INS_IsVscatter(ins)) {
@@ -629,30 +629,30 @@ bool extract_mask_on(const PINTOOL_REGISTER& mask_reg_val_buf, const UINT32 lane
 
 void init_reg_xed_to_pin_map() {
   reg_xed_to_pin_map[XED_REG_INVALID] = REG_INVALID_;
-  reg_xed_to_pin_map[XED_REG_RDI]     = REG_RDI;
+  reg_xed_to_pin_map[XED_REG_RDI] = LEVEL_BASE::REG_RDI;
   reg_xed_to_pin_map[XED_REG_EDI]     = REG_EDI;
   reg_xed_to_pin_map[XED_REG_ESI]     = REG_ESI;
-  reg_xed_to_pin_map[XED_REG_RSI]     = REG_RSI;
+  reg_xed_to_pin_map[XED_REG_RSI] = LEVEL_BASE::REG_RSI;
   reg_xed_to_pin_map[XED_REG_EBP]     = REG_EBP;
-  reg_xed_to_pin_map[XED_REG_RBP]     = REG_RBP;
+  reg_xed_to_pin_map[XED_REG_RBP] = LEVEL_BASE::REG_RBP;
   reg_xed_to_pin_map[XED_REG_ESP]     = REG_ESP;
-  reg_xed_to_pin_map[XED_REG_RSP]     = REG_RSP;
+  reg_xed_to_pin_map[XED_REG_RSP] = LEVEL_BASE::REG_RSP;
   reg_xed_to_pin_map[XED_REG_EBX]     = REG_EBX;
-  reg_xed_to_pin_map[XED_REG_RBX]     = REG_RBX;
+  reg_xed_to_pin_map[XED_REG_RBX] = LEVEL_BASE::REG_RBX;
   reg_xed_to_pin_map[XED_REG_EDX]     = REG_EDX;
-  reg_xed_to_pin_map[XED_REG_RDX]     = REG_RDX;
+  reg_xed_to_pin_map[XED_REG_RDX] = LEVEL_BASE::REG_RDX;
   reg_xed_to_pin_map[XED_REG_ECX]     = REG_ECX;
-  reg_xed_to_pin_map[XED_REG_RCX]     = REG_RCX;
+  reg_xed_to_pin_map[XED_REG_RCX] = LEVEL_BASE::REG_RCX;
   reg_xed_to_pin_map[XED_REG_EAX]     = REG_EAX;
-  reg_xed_to_pin_map[XED_REG_RAX]     = REG_RAX;
-  reg_xed_to_pin_map[XED_REG_R8]      = REG_R8;
-  reg_xed_to_pin_map[XED_REG_R9]      = REG_R9;
-  reg_xed_to_pin_map[XED_REG_R10]     = REG_R10;
-  reg_xed_to_pin_map[XED_REG_R11]     = REG_R11;
-  reg_xed_to_pin_map[XED_REG_R12]     = REG_R12;
-  reg_xed_to_pin_map[XED_REG_R13]     = REG_R13;
-  reg_xed_to_pin_map[XED_REG_R14]     = REG_R14;
-  reg_xed_to_pin_map[XED_REG_R15]     = REG_R15;
+  reg_xed_to_pin_map[XED_REG_RAX] = LEVEL_BASE::REG_RAX;
+  reg_xed_to_pin_map[XED_REG_R8] = LEVEL_BASE::REG_R8;
+  reg_xed_to_pin_map[XED_REG_R9] = LEVEL_BASE::REG_R9;
+  reg_xed_to_pin_map[XED_REG_R10] = LEVEL_BASE::REG_R10;
+  reg_xed_to_pin_map[XED_REG_R11] = LEVEL_BASE::REG_R11;
+  reg_xed_to_pin_map[XED_REG_R12] = LEVEL_BASE::REG_R12;
+  reg_xed_to_pin_map[XED_REG_R13] = LEVEL_BASE::REG_R13;
+  reg_xed_to_pin_map[XED_REG_R14] = LEVEL_BASE::REG_R14;
+  reg_xed_to_pin_map[XED_REG_R15] = LEVEL_BASE::REG_R15;
 
   /*
   //  reg_xed_to_pin_map[XED_REG_GR_LAST]   = REG_RAX;

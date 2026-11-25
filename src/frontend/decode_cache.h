@@ -63,22 +63,6 @@ Uop_Variant* decode_cache_uops(DecodedInst* decoded, uint16_t mem_shape, uns8 cf
 
 #include <vector>
 
-// Wrong-path replay (trace_fe.cc): the last on-path instance of a PC, recorded at fetch.
-// Memory addresses are always replayed poisoned; register values and load data as zero.
-struct ReplayRecord {
-  uint8_t fake;  // Wrongpath_Nop_Mode_Reason of the PT fake that replaced it, 0 if none
-  bool taken;
-  bool exit;
-  bool last_inst_from_trace;
-  bool fetched;
-  bool encoding_is_new;
-  uint8_t num_ld;  // memtrace_fe zeroes these for an instance without memory records
-  uint8_t num_st;
-  uint64_t next_addr;
-  uint64_t branch_target;  // per instance for indirect branches
-  uint64_t inst_uid;
-};
-
 // An instruction decoded once and reused on every later visit to its PC.
 struct DecodedInst {
   ctype_pin_inst_static inst;  // first: InstInfo's decoded and static_info alias it
@@ -101,8 +85,6 @@ struct DecodedInst {
   uint8_t mem_read_mask;     // bit i: memory operand i is read
   uint8_t mem_written_mask;  // bit i: memory operand i is written
 
-  ReplayRecord replay;
-
   // uop decoder: the uops of each memory shape seen so far
   Uop_Variant uops;
   std::vector<Uop_Variant>* more_uops;
@@ -118,10 +100,10 @@ DecodedInst* decode_cache_find_encoding(uns proc_id, uint64_t pc, uint64_t lsb, 
 // Insert a new encoding (keyed by decoded.inst's bytes) and make it the PC's current one.
 DecodedInst* decode_cache_insert(uns proc_id, uint64_t pc, const DecodedInst& decoded);
 void decode_cache_make_current(uns proc_id, uint64_t pc, DecodedInst* decoded);
-// Wrong-path replay: the entry holding the PC's last on-path instance (its replay record).
-DecodedInst* decode_cache_replay_entry(uns proc_id, uint64_t pc);
-// The PC's replay entry, to read and update in one lookup; the PC must have an entry.
-DecodedInst*& decode_cache_replay_slot(uns proc_id, uint64_t pc);
+// Wrong-path visibility: records the core fetching the PC on the path as inst inst_uid.
+void decode_cache_note_fetch(uns proc_id, uint64_t pc, uint64_t inst_uid);
+// The PC's current encoding if the core had fetched it on the path by inst inst_uid, else null.
+DecodedInst* decode_cache_find_fetched(uns proc_id, uint64_t pc, uint64_t inst_uid);
 #endif
 
 #endif

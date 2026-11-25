@@ -264,6 +264,16 @@ void insert_checks_for_control_flow(const INS& ins) {
   }
 }
 
+void insert_branch_context_saves(const INS& ins) {
+  // scarab control flow: branches, calls, rets, and REP string ops (CF_REP, one uid per iteration)
+  if (INS_IsRet(ins) || INS_IsBranch(ins) || INS_IsCall(ins) || INS_HasRealRep(ins)) {
+    if (INS_IsValidForIpointAfter(ins))
+      INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)save_branch_context, IARG_CONST_CONTEXT, IARG_END);
+    if (INS_IsValidForIpointTakenBranch(ins))
+      INS_InsertCall(ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)save_branch_context, IARG_CONST_CONTEXT, IARG_END);
+  }
+}
+
 void insert_processing_for_nonsyscall_instructions(const INS& ins) {
   // the dummy jump after a right-path exception checkpoints the live context
   INS_InsertIfCall(ins, IPOINT_BEFORE, (AFUNPTR)rightpath_exc_pending, IARG_END);
@@ -292,13 +302,125 @@ void insert_processing_for_nonsyscall_instructions(const INS& ins) {
   }
   IARGLIST_Free(ctxt_arg);
 
-  // scarab control flow: branches, calls, rets, and REP string ops (CF_REP, one uid per iteration)
-  if (INS_IsRet(ins) || INS_IsBranch(ins) || INS_IsCall(ins) || INS_HasRealRep(ins)) {
-    if (INS_IsValidForIpointAfter(ins))
-      INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)save_branch_context, IARG_CONST_CONTEXT, IARG_END);
-    if (INS_IsValidForIpointTakenBranch(ins))
-      INS_InsertCall(ins, IPOINT_TAKEN_BRANCH, (AFUNPTR)save_branch_context, IARG_CONST_CONTEXT, IARG_END);
+  insert_branch_context_saves(ins);
+}
+
+// Merged per-instruction calls. Flag bits beyond the decoder's (decoder.h): logging's fall-through and
+// taken inputs, before_ins_one_mem, and the control-flow check kind.
+enum {
+  PX_FALLTHROUGH = 1 << 4,
+  PX_LOG_TAKEN = 1 << 5,
+  PX_ONE_MEM = 1 << 6,
+  PX_CF_SHIFT = 11
+};
+enum {
+  PX_CF_NONE,
+  PX_CF_RET,
+  PX_CF_COND,
+  PX_CF_DIRECT,
+  PX_CF_MEM,
+  PX_CF_REG,
+  PX_CF_FORCE_WPNM
+};
+
+// The separate calls' order: logging (counts down fast_forward_count, which the rest reads), decoder,
+// control-flow check, then checkpoint and the scarab protocol.
+void ins_before(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const ADDRINT* a) {
+  const Dec_Vals v = pin_decoder_parse(flags, a);
+  const ADDRINT* p = v.end;
+  const UINT32 write_size = (flags & PX_ONE_MEM) ? (UINT32)*p++ : 0;
+  const UINT32 cf = (flags >> PX_CF_SHIFT) & 7;
+  const ADDRINT reg_target = (cf == PX_CF_REG) ? *p++ : 0;
+
+  logging(iaddr + info->st.size, iaddr, (flags & PX_FALLTHROUGH) != 0, (flags & PX_LOG_TAKEN) && v.taken);
+  pin_decoder_before(info, iaddr, flags, v);
+  switch (cf) {
+    case PX_CF_RET:
+      check_ret_control_ins(v.ld_ea, v.ld_size);
+      break;
+    case PX_CF_COND:
+      check_nonret_control_ins(v.taken, info->st.branch_target);
+      break;
+    case PX_CF_DIRECT:
+      check_nonret_control_ins(true, info->st.branch_target);
+      break;
+    case PX_CF_MEM:
+      check_nonret_control_mem_target(true, v.ld_ea, v.ld_size);
+      break;
+    case PX_CF_REG:
+      check_nonret_control_ins(true, reg_target);
+      break;
+    case PX_CF_FORCE_WPNM:
+      check_nonret_control_mem_target(true, 0, 0);
+      break;
   }
+  if (flags & PX_ONE_MEM)
+    before_ins_one_mem(nullptr, v.st_ea, write_size);
+  else
+    before_ins_no_mem(nullptr);
+}
+
+void ins_after(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const ADDRINT* a) {
+  pin_decoder_after(iaddr, flags, a);
+  after_ins_restage_op(iaddr);
+}
+
+// One BEFORE and one AFTER call for an ordinary instruction (PIN's JIT cost grows with the number of
+// analysis calls). Returns false, inserting nothing, for instructions that keep the separate calls.
+bool insert_merged_calls(const INS& ins) {
+  const bool magic = INS_IsXchg(ins) && INS_OperandReg(ins, 0) == REG_GCX && INS_OperandReg(ins, 1) == REG_GCX;
+  const bool mem = INS_IsMemoryRead(ins) || INS_IsMemoryWrite(ins);
+  if (magic || INS_IsVgather(ins) || INS_IsVscatter(ins) || INS_HasScatteredMemoryAccess(ins) ||
+      (KnobCheckpointMemOps.Value() && mem))
+    return false;
+
+  ctype_pin_inst* info = pin_decoder_prepare(ins);
+  uns nargs = 0;
+  IARGLIST args = IARGLIST_Alloc();
+  UINT32 flags = pin_decoder_add_before_args(ins, info, args, &nargs);
+  if (INS_HasFallThrough(ins))
+    flags |= PX_FALLTHROUGH;
+  if (INS_Category(ins) == XED_CATEGORY_COND_BR)
+    flags |= PX_LOG_TAKEN;
+  if (INS_IsMemoryWrite(ins)) {
+    flags |= PX_ONE_MEM;
+    IARGLIST_AddArguments(args, IARG_MEMORYWRITE_SIZE, IARG_END);
+    nargs++;
+  }
+  UINT32 cf = PX_CF_NONE;
+  if (INS_IsRet(ins)) {
+    cf = PX_CF_RET;
+  } else if (INS_IsBranch(ins) || INS_IsCall(ins)) {
+    if (INS_IsDirectControlFlow(ins)) {
+      cf = INS_Category(ins) == XED_CATEGORY_COND_BR ? PX_CF_COND : PX_CF_DIRECT;
+    } else if (INS_IsMemoryRead(ins)) {
+      cf = PX_CF_MEM;
+    } else if (INS_MaxNumRRegs(ins) > 0) {
+      cf = PX_CF_REG;
+      IARGLIST_AddArguments(args, IARG_REG_VALUE, INS_RegR(ins, 0), IARG_END);
+      nargs++;
+    } else {
+      cf = PX_CF_FORCE_WPNM;
+    }
+  }
+  flags |= cf << PX_CF_SHIFT;
+  // the dummy jump after a right-path exception checkpoints the live context
+  INS_InsertIfCall(ins, IPOINT_BEFORE, (AFUNPTR)rightpath_exc_pending, IARG_END);
+  INS_InsertThenCall(ins, IPOINT_BEFORE, (AFUNPTR)handle_rightpath_exc, IARG_CONST_CONTEXT, IARG_END);
+  INS_InsertCall(ins, IPOINT_BEFORE, merged_entry<ins_before>(nargs), IARG_PTR, info, IARG_INST_PTR, IARG_UINT32, flags,
+                 IARG_IARGLIST, args, IARG_END);
+  IARGLIST_Free(args);
+
+  if (INS_IsValidForIpointAfter(ins)) {
+    nargs = 0;
+    args = IARGLIST_Alloc();
+    flags = pin_decoder_add_after_args(ins, info, args, &nargs);
+    INS_InsertCall(ins, IPOINT_AFTER, merged_entry<ins_after>(nargs), IARG_PTR, info, IARG_INST_PTR, IARG_UINT32, flags,
+                   IARG_IARGLIST, args, IARG_END);
+    IARGLIST_Free(args);
+  }
+  insert_branch_context_saves(ins);
+  return true;
 }
 
 void instrumentation_func_per_trace(TRACE trace, void* v) {
@@ -357,6 +479,10 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
                 "Instrument from Instruction() eip=%" PRIx64 "\n",
                 (uint64_t)INS_Address(ins));
 
+      xed_decoded_inst_t* xed_ins = INS_XedDec(ins);
+      if (!INS_IsSyscall(ins) && !is_ifetch_barrier(xed_ins) && insert_merged_calls(ins))
+        return;
+
       insert_logging(ins);
       insert_check_for_magic_instructions(ins);
 
@@ -368,7 +494,6 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
       if (INS_IsValidForIpointAfter(ins))
         INS_InsertCall(ins, IPOINT_AFTER, (AFUNPTR)after_ins_restage_op, IARG_INST_PTR, IARG_END);
 
-      xed_decoded_inst_t* xed_ins = INS_XedDec(ins);
       if(INS_IsSyscall(ins) || is_ifetch_barrier(xed_ins)) {
         insert_processing_for_syscalls(ins);
       } else {

@@ -354,6 +354,11 @@ void bp_ibtb_ittage_init(Bp_Data* bp_data, Bp_Data* primary_bp) {
 
 Addr bp_ibtb_ittage_pred(Bp_Data* bp_data, Op* op) {
   if (PERFECT_IBP) {
+    if (op_target_unknown(op)) {
+      // A wrong-path indirect branch has no target in the trace, so there is no prediction
+      ASSERT(op->proc_id, op->off_path);
+      return 0;
+    }
     ASSERT(op->proc_id, op->oracle_info.target != ADDR_INVALID);
     return op->oracle_info.target;
   }

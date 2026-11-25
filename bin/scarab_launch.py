@@ -52,6 +52,8 @@ parser.add_argument('--enable_aslr', action='store_true', help="Enable ASLR for 
 parser.add_argument('--scarab', default=scarab_paths.scarab_bin, help="Path to the scarab binary. Defaults to src/scarab.")
 parser.add_argument('--pin', default=scarab_paths.pin_dir + "/pin", help="Path to the pin binary. Default is $PIN_ROOT/pin.")
 parser.add_argument('--frontend_pin_tool', default=scarab_paths.pin_bin, help="Path to the pin tool that will act as the frontend.")
+parser.add_argument('--scarab_in_pin', action='store_true',
+                    help="Run scarab inside the PIN tool (built with 'make in_pin') instead of as its own process.")
 parser.add_argument('--checkpoint_loader', default=scarab_paths.checkpoint_loader_bin, help="Path to checkpoint loader executable.")
 parser.add_argument('--frontend', default="exec", choices=["exec", "trace"], help="Selects between the Trace fronend and the Exec-driven frontend.")
 
@@ -134,6 +136,11 @@ class Scarab:
   def launch(self):
     self.__copy_params_file_to_simdir()
     self.__get_scarab_command()
+    if args.scarab_in_pin:  # the PIN tool runs scarab with these args (Pin.__get_pin_program_command)
+      global in_pin_scarab_args
+      in_pin_scarab_args = self.cmd.split(None, 1)[1] + "".join(
+          " --{}={}".format(s, os.path.basename(f)) for s, f in (("stdout", args.scarab_stdout), ("stderr", args.scarab_stderr)) if f)
+      return None
     
     print('\nLaunching Scarab:\n' + self.cmd + '\n')
 
@@ -190,15 +197,20 @@ class Pin:
     return self.cmd
 
   def __get_pin_program_command(self):
+    if args.scarab_in_pin:
+      in_pin = " -scarab_dir {} -scarab_args {}".format(shlex.quote(os.path.abspath(args.simdir)), shlex.quote(in_pin_scarab_args))
+    else:
+      in_pin = ""
     # one basic block per JIT region: PIN register-allocates multi-block regions far more slowly (about 2x
     # exec speed on gcc), and overlapping multi-block traces recompile the same code. Unlimited regbindings cache:
     # PIN compiles a trace per entry register binding, and evicting bindings recompiled hot traces ~5x on gcc
-    self.cmd = "{pin} -xyzzy -region_max_bbls 1 -regbindings_cache_limit 0 -mt 0 -t {pin_tool} -socket_path {socket} -core_id {core_id} {additional_args} -- {program_command}".format(
+    self.cmd = "{pin} -xyzzy -region_max_bbls 1 -regbindings_cache_limit 0 -mt 0 -t {pin_tool} -socket_path {socket} -core_id {core_id} {additional_args}{in_pin} -- {program_command}".format(
         pin=args.pin,
         pin_tool=args.frontend_pin_tool,
         socket=self.socket_path,
         core_id=self.core_id,
         additional_args=args.pintool_args,
+        in_pin=in_pin,
         program_command=self.program_path
       )
 
@@ -254,7 +266,9 @@ def main():
   try:
     if frontend == 'exec_driven':
       socket_path = scarab_utils.get_temp_socket_path()
-      proc_list.push(Scarab(frontend, socket_path=socket_path).launch())
+      scarab_proc = Scarab(frontend, socket_path=socket_path).launch()
+      if scarab_proc:  # None: scarab runs inside the PIN tool
+        proc_list.push(scarab_proc)
     elif frontend == 'trace':
       proc_list.push(Scarab(frontend, trace_list=args.trace).launch())
 

@@ -45,11 +45,15 @@ bool scarab_buffer_full() {
 }
 
 void scarab_send_buffer() {
-  static Message<ScarabOpBuffer_type> message;  // reused: keeps its buffer across sends
-  message = scarab_op_buffer;
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "START: Sending message to Scarab.\n");
+#ifdef SCARAB_IN_PIN
+  in_pin::send_ops(scarab_op_buffer);
+#else
+  static Message<ScarabOpBuffer_type> message;  // reused: keeps its buffer across sends
+  message = scarab_op_buffer;
   scarab->send(message);
+#endif
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "END: Sending message to Scarab.\n");
   scarab_op_buffer.clear();

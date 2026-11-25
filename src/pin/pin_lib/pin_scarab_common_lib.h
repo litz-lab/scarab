@@ -57,6 +57,13 @@ struct Scarab_To_Pin_Msg {
 } __attribute__((packed));
 
 typedef std::deque<compressed_op> ScarabOpBuffer_type;
+#ifdef SCARAB_IN_PIN
+// Scarab linked into the PIN tool: op batches change hands by swapping deques, without serialization.
+namespace in_pin {
+void send_ops(ScarabOpBuffer_type& ops);     // PIN side; leaves ops empty
+void receive_ops(ScarabOpBuffer_type& ops);  // scarab side; ops must be empty
+}  // namespace in_pin
+#endif
 
 Flag is_sentinal_op(compressed_op* op);
 

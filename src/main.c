@@ -219,6 +219,10 @@ Scarab's source code is organized as follows:
 
 /**************************************************************************************/
 
+#ifdef SCARAB_IN_PIN
+#define main scarab_main  // linked into the PIN tool, which calls it on its own stack (pin_exec/in_pin.cc)
+int scarab_main(int argc, char* argv[], char* envp[]);
+#endif
 int main(int argc, char* argv[], char* envp[]) {
   char** simulated_argv;
   time_t cur_time;
@@ -254,7 +258,9 @@ int main(int argc, char* argv[], char* envp[]) {
   }
 
   /* set up signal handler for SIGINT */
+#ifndef SCARAB_IN_PIN  // signals belong to the simulated application
   signal(SIGINT, handle_SIGINT);
+#endif
 
   /* print startup messages */
   time(&cur_time);

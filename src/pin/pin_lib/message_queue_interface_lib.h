@@ -41,6 +41,16 @@ extern "C" {
 
 #define MAX_PACKET_SIZE (1 << 14)
 
+#ifdef SCARAB_IN_PIN
+// Scarab linked into the PIN tool: both run as coroutines on one thread (pin_exec/in_pin.cc). A receive
+// with nothing queued switches to the other side, so each side blocks exactly where the socket did. Only
+// scarab's commands are messages; op batches change hands as deques (in_pin::send_ops/receive_ops).
+namespace in_pin {
+void to_pin(const std::vector<char>& m);  // scarab side
+std::vector<char> from_scarab();          // PIN side
+}  // namespace in_pin
+#endif
+
 void assertm(bool p, const char* msg);
 
 namespace std {
@@ -338,6 +348,17 @@ class Client : public TCPSocket {
 #endif
 };
 
+#ifdef SCARAB_IN_PIN
+template <typename T>
+void Server::send(uint32_t id, const Message<T>& m) {
+  in_pin::to_pin(*m.get_raw_data());
+}
+
+template <typename T>
+Message<T> Client::receive() {
+  return Message<T>(in_pin::from_scarab());
+}
+#else
 template <typename T>
 void Server::send(uint32_t id, const Message<T>& m) {
   TCPSocket::send(client_fds[id], m);
@@ -357,6 +378,7 @@ template <typename T>
 Message<T> Client::receive() {
   return TCPSocket::receive<T>(socket_fd);
 }
+#endif
 
 #ifdef GTEST_COMPILE
 template <typename T>

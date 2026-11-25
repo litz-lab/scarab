@@ -69,7 +69,11 @@ void get_next_op_buffer_from_pin(uns proc_id) {
   msg.inst_uid = 0;
 
   server->send(proc_id, (Message<Scarab_To_Pin_Msg>)msg);                       // blocking
+#ifdef SCARAB_IN_PIN
+  in_pin::receive_ops(cached_cop_buffers[proc_id]);
+#else
   cached_cop_buffers[proc_id] = server->receive<ScarabOpBuffer_type>(proc_id);  // blocking
+#endif
   for (compressed_op& cop : cached_cop_buffers[proc_id])
     cop.decoded = nullptr;  // a pointer from the PIN process
 }

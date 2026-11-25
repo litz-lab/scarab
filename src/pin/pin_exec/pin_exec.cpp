@@ -54,6 +54,7 @@
 #include "analysis_functions.h"
 #include "exception_handling.h"
 #include "globals.h"
+#include "main_loop.h"
 #include "read_mem_map.h"
 #include "scarab_interface.h"
 #include "utils.h"
@@ -104,6 +105,15 @@ KNOB<UINT64> KnobDebugPrintEndUid(KNOB_MODE_WRITEONCE, "pintool",
                                   "Stop printing debug prints after this UID");
 KNOB<UINT64> KnobStartRip(KNOB_MODE_WRITEONCE, "pintool", "rip", "0",
                           "the starting rip of the program");
+
+#ifdef SCARAB_IN_PIN
+#define LAZY_CTXT_DEFAULT "1"
+#else
+#define LAZY_CTXT_DEFAULT "0"  // ending batches at branches costs a socket round trip each
+#endif
+KNOB<bool> KnobLazyCtxt(KNOB_MODE_WRITEONCE, "pintool", "lazy_ctxt", LAZY_CTXT_DEFAULT,
+                        "End batches at control-flow ops and capture the context only on a redirect, instead of "
+                        "saving it after every control-flow op");
 
 KNOB<bool> KnobCheckpointMemOps(
     KNOB_MODE_WRITEONCE, "pintool", "checkpoint_mem_ops", "false",
@@ -264,7 +274,33 @@ void insert_checks_for_control_flow(const INS& ins) {
   }
 }
 
+ADDRINT redirect_is_pending() {
+  return redirect_pending || capture_pending;
+}
+
+// After the instruction's BEFORE calls: a deferred redirect runs with the live context.
+// PIN waits for scarab's decision right after a control-flow op: at a basic-block head (any trace entered
+// after a CF op starts a block), or for a REP iteration (CF_REP) at the REP itself or the instruction after
+// it -- PIN does not end blocks at REP instructions.
+bool is_capture_site(const INS& ins) {
+  const INS prev = INS_Prev(ins);
+  return !INS_Valid(prev) || INS_IsControlFlow(prev) || INS_HasRealRep(ins) || INS_HasRealRep(prev);
+}
+
+void set_capture_site(BOOL site) {
+  at_capture_site = site;
+}
+
+void insert_pending_redirect(const INS& ins) {
+  if (!lazy_ctxt || !is_capture_site(ins))
+    return;
+  INS_InsertIfCall(ins, IPOINT_BEFORE, (AFUNPTR)redirect_is_pending, IARG_END);
+  INS_InsertThenCall(ins, IPOINT_BEFORE, (AFUNPTR)do_pending_redirect, IARG_CONST_CONTEXT, IARG_END);
+}
+
 void insert_branch_context_saves(const INS& ins) {
+  if (lazy_ctxt)  // the context is captured on redirect instead
+    return;
   // scarab control flow: branches, calls, rets, and REP string ops (CF_REP, one uid per iteration)
   if (INS_IsRet(ins) || INS_IsBranch(ins) || INS_IsCall(ins) || INS_HasRealRep(ins)) {
     if (INS_IsValidForIpointAfter(ins))
@@ -306,11 +342,13 @@ void insert_processing_for_nonsyscall_instructions(const INS& ins) {
 }
 
 // Merged per-instruction calls. Flag bits beyond the decoder's (decoder.h): logging's fall-through and
-// taken inputs, before_ins_one_mem, the control-flow check kind, and the previous instruction's folded AFTER.
+// taken inputs, before_ins_one_mem, a lazy-capture site, the control-flow check kind, and the previous
+// instruction's folded AFTER.
 enum {
   PX_FALLTHROUGH = 1 << 4,
   PX_LOG_TAKEN = 1 << 5,
   PX_ONE_MEM = 1 << 6,
+  PX_CAPTURE_SITE = 1 << 7,
   PX_CF_SHIFT = 11,
   PX_PREV_DST = 1 << 14
 };
@@ -327,6 +365,7 @@ enum {
 // The separate calls' order: logging (counts down fast_forward_count, which the rest reads), decoder,
 // control-flow check, then checkpoint and the scarab protocol.
 void ins_before(ctype_pin_inst* info, ADDRINT iaddr, UINT32 flags, const ADDRINT* a) {
+  at_capture_site = (flags & PX_CAPTURE_SITE) != 0;
   const Dec_Vals v = pin_decoder_parse(flags, a);
   const ADDRINT* p = v.end;
   const UINT32 write_size = (flags & PX_ONE_MEM) ? (UINT32)*p++ : 0;
@@ -401,6 +440,8 @@ bool insert_merged_calls(const INS& ins) {
   UINT32 flags = pin_decoder_add_before_args(ins, info, args, &nargs);
   if (INS_HasFallThrough(ins))
     flags |= PX_FALLTHROUGH;
+  if (is_capture_site(ins))
+    flags |= PX_CAPTURE_SITE;
   if (INS_Category(ins) == XED_CATEGORY_COND_BR)
     flags |= PX_LOG_TAKEN;
   if (INS_IsMemoryWrite(ins)) {
@@ -441,6 +482,7 @@ bool insert_merged_calls(const INS& ins) {
   INS_InsertCall(ins, IPOINT_BEFORE, merged_entry<ins_before>(nargs), IARG_PTR, info, IARG_INST_PTR, IARG_UINT32, flags,
                  IARG_IARGLIST, args, IARG_END);
   IARGLIST_Free(args);
+  insert_pending_redirect(ins);
 
   if (INS_IsValidForIpointAfter(ins) && !after_folded(ins)) {
     nargs = 0;
@@ -514,6 +556,8 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
       if (insert_merged_calls(ins))
         return;
 
+      if (lazy_ctxt)
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)set_capture_site, IARG_BOOL, is_capture_site(ins), IARG_END);
       insert_logging(ins);
       insert_check_for_magic_instructions(ins);
 
@@ -531,6 +575,7 @@ void instrumentation_func_per_instruction(INS ins, void* v) {
         insert_checks_for_control_flow(ins);
         insert_processing_for_nonsyscall_instructions(ins);
       }
+      insert_pending_redirect(ins);
 
 #ifdef DEBUG_PRINT
       stringstream ss;
@@ -592,6 +637,7 @@ int main(int argc, char* argv[]) {
 
   heartbeat_enabled = KnobHeartbeatEnabled.Value();
   max_buffer_size   = KnobMaxBufferSize.Value();
+  lazy_ctxt = KnobLazyCtxt.Value();
 
   fast_forward_count = KnobFastForwardCount.Value();
   fast_forward_to_pin_start =

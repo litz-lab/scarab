@@ -62,6 +62,12 @@ ADDRINT           saved_excp_eip          = 0;
 ADDRINT           saved_excp_next_eip     = 0;
 Scarab_To_Pin_Msg saved_cmd;
 bool              excp_rewind_msg = false;
+bool lazy_ctxt = false;
+bool redirect_pending = false;
+Scarab_To_Pin_Msg pending_redirect = {};
+bool capture_pending = false;
+UINT64 capture_uid = 0;
+bool at_capture_site = false;
 bool              found_syscall   = false;
 bool              excp_ff         = false;
 

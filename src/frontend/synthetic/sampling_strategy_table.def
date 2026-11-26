@@ -1,0 +1,18 @@
+// Format: enum name, text name, function name prefix
+SAMPLING_STRATEGY_IMPL(UNIFORM_SEQUENTIAL, "uniform_sequential")
+SAMPLING_STRATEGY_IMPL(UNIFORM_RANDOM,     "uniform_random")
+SAMPLING_STRATEGY_IMPL(NORMAL_RANDOM,      "normal_random")
+SAMPLING_STRATEGY_IMPL(DISCRETE_RANDOM,    "discrete_random")
+SAMPLING_STRATEGY_IMPL(USER_DEFINED,       "user_defined")
+
+
+
+
+/*
+
+  UNIFORM_SEQUENTIAL,  // pick sequentially
+  UNIFORM_RANDOM,      // pick sequentially but sequence vector must be shuffled
+  NORMAL_RANDOM,       // use the Bell Curve Normal Distribution formula
+  DICRETE_RANDOM,      // every sample/element has a discrete probability
+  USER_DEFINED
+*/

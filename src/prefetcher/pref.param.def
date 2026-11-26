@@ -208,7 +208,7 @@ DEF_PARAM(uoc_zero_latency_pref         , UOC_ZERO_LATENCY_PREF            , Fla
 
 /* Indirect Memory Prefetcher (pref_imp.c): --pref_dcache_prefetchers TYPE_IMP,DEST_DCACHE */
 // Prefetch Table entries (one per load PC)
-DEF_PARAM(pref_imp_pt_entries           , PREF_IMP_PT_ENTRIES              , uns     , uns     , 16   , )
+DEF_PARAM(pref_imp_pt_entries           , PREF_IMP_PT_ENTRIES              , uns     , uns     , 32   , )
 // consecutive next-element accesses before a load PC counts as an index stream
 DEF_PARAM(pref_imp_stream_thresh        , PREF_IMP_STREAM_THRESH           , uns     , uns     , 2    , )
 // prefetch distance in index elements: on B[i], prefetch A[B[i + dist]] (paper max: 16)

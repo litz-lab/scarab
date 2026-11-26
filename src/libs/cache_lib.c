@@ -1659,8 +1659,8 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
  * Re-Reference Interval Prediction (RRIP)", ISCA 2010, Sec. 4: set dueling between SRRIP and
  * BRRIP.
  *
- *  - Leader sets always insert with SRRIP or always with BRRIP. Every other set (a follower)
- *    inserts with whichever of the two is currently missing less.
+ *  - --drrip_leader_sets sets always insert with SRRIP and as many always insert with BRRIP.
+ *    Every other set (a follower) inserts with whichever of the two is currently missing less.
  *  - PSEL, a --drrip_psel_bits saturating counter, starts at its midpoint. A miss in an SRRIP
  *    leader increments it and a miss in a BRRIP leader decrements it, so PSEL's top bit set
  *    means SRRIP's leaders have been missing more, and followers then insert with BRRIP.
@@ -1668,9 +1668,16 @@ void brrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
  *    cache_report_miss() when it sets repl_miss_by_report (cache_lib.h). Nothing is counted in
  *    update_evict, which also runs for get_next_repl_line's peek at the victim and again every
  *    time a refused fill is retried.
+ *  - BRRIP mode inserts as REPL_BRRIP does: at the long re-reference interval with probability
+ *    1/BRRIP_BIMODAL_PARA, else at the distant one. Its draws come from nrand48() on a per-cache
+ *    state, not the global rand(), so DRRIP neither shifts nor is shifted by other rand() users.
  *  - Hits promote to RRPV 0 (nru_update_hit); the victim search is rrip_update_evict.
  *
- * One set in every four leads each policy. */
+ * Leader sets are spread with the paper's constituency scheme over the S sets an index can
+ * reach (set_mask + 1; a set count that is not a power of two leaves the top sets unindexed):
+ * the S sets are divided into L = min(--drrip_leader_sets, S / 2) equal constituencies of
+ * C = S / L sets, and constituency k holds one SRRIP leader at offset k mod C and one BRRIP
+ * leader at offset (k + C/2) mod C. C >= 2, so the two never coincide. */
 #define DRRIP_FOLLOWER 0
 #define DRRIP_LEADER_SRRIP 1
 #define DRRIP_LEADER_BRRIP 2
@@ -1679,6 +1686,7 @@ typedef struct Drrip_State_struct {
   uns8* role; /* per set: DRRIP_FOLLOWER or the policy it leads */
   uns psel;
   uns psel_max;
+  unsigned short rng[3]; /* nrand48 state for BRRIP-mode fills, private to this cache */
 } Drrip_State;
 
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
@@ -1693,19 +1701,23 @@ static inline Drrip_State* drrip_state(Cache* cache) {
 void drrip_action_init(Cache* cache, const char* name, uns cache_size, uns assoc, uns line_size, uns data_size,
                        Repl_Policy repl_policy) {
   Drrip_State* s;
-  int ii;
-  int shift_dedicated = 0;
+  uns sets = cache->set_mask + 1;
+  uns leaders, constituency, k;
 
-  brrip_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+  /* Not brrip_action_init: it reseeds the global rand(), which DRRIP does not use. */
+  general_action_init(cache, name, cache_size, assoc, line_size, data_size, repl_policy);
+  ASSERTM(0, sets >= 2, "%s: REPL_DRRIP needs at least 2 sets for set dueling (got %u)\n", name, sets);
+  ASSERTM(0, DRRIP_LEADER_SETS >= 1, "--drrip_leader_sets must be at least 1\n");
   ASSERTM(0, DRRIP_PSEL_BITS >= 1 && DRRIP_PSEL_BITS <= 30, "--drrip_psel_bits must be in [1, 30] (got %u)\n",
           DRRIP_PSEL_BITS);
 
   s = (Drrip_State*)calloc(1, sizeof(Drrip_State));
   s->role = (uns8*)calloc(cache->num_sets, sizeof(uns8));
-  for (ii = 0; ii + 4 <= cache->num_sets; ii = ii + 4) {
-    s->role[ii + shift_dedicated % 4] = DRRIP_LEADER_BRRIP;
-    s->role[ii + (shift_dedicated + 1) % 4] = DRRIP_LEADER_SRRIP;
-    shift_dedicated = (shift_dedicated + 1) % 4;
+  leaders = MIN2(DRRIP_LEADER_SETS, sets / 2);
+  constituency = sets / leaders;
+  for (k = 0; k < leaders; k++) {
+    s->role[k * constituency + k % constituency] = DRRIP_LEADER_SRRIP;
+    s->role[k * constituency + (k + constituency / 2) % constituency] = DRRIP_LEADER_BRRIP;
   }
   s->psel_max = (1u << DRRIP_PSEL_BITS) - 1;
   s->psel = 1u << (DRRIP_PSEL_BITS - 1);
@@ -1741,10 +1753,14 @@ void drrip_update_insert(Cache* cache, uns8 proc_id, uns set, uns way, void* arg
       break;
   }
 
-  if (use_brrip)
-    brrip_update_insert(cache, proc_id, set, way, arg);
-  else
+  if (use_brrip) {
+    /* s->rng starts zeroed by calloc, a valid nrand48 state. */
+    cache->entries[set][way].reference_val =
+        nrand48(s->rng) % BRRIP_BIMODAL_PARA == 0 ? RRIP_DISTANT_VAL - 1 : RRIP_DISTANT_VAL;
+    cache_debug_print_set(cache, set, way, CACHE_EVENT_INSERT);
+  } else {
     srrip_update_insert(cache, proc_id, set, way, arg);
+  }
 
   DEBUG(0, "DRRIP insert: set 0x%x role %u psel %u brrip %d\n", set, s->role[set], s->psel, use_brrip);
 }

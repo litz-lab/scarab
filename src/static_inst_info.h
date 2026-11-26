@@ -35,11 +35,13 @@
 #include "table_info.h"
 
 /* Static register operand: id/type only. The runtime value lives in Op::src_val /
- * Op::dst_val (filled by the uop generator), never on the shared static struct. */
+ * Op::dst_val (filled by the uop generator), never on the shared static struct. 6 B: every
+ * interned Static_Op_Info holds MAX_SRCS + MAX_DESTS of these, so padding here is paid per
+ * distinct uop -- over a million of them in a Google sim. */
 typedef struct Static_Reg_Info_struct {
-  uns16 reg;      // register number within the register set
-  Reg_Type type;  // integer, floating point, extra
-  uns16 id;       // flattened register number (unique across sets)
+  uns16 reg;  // register number within the register set
+  uns16 id;   // flattened register number (unique across sets)
+  uns8 type;  // Reg_Type (integer, floating point, extra), stored in one byte
 } Static_Reg_Info;
 
 // Max uops per macro-instruction. Observed max is 7 (SPEC gcc); 16 leaves headroom. The decoder

@@ -66,6 +66,8 @@ the program.  This way, an exact duplicate run can be performed.
                */
 /* (anything in it is overridden by the command-line args) */
 
+const char* scarab_params_file = ARG_FILE_IN;  // the PIN tool points it at scarab's run directory
+
 #define ARG_FILE_OUT "PARAMS" /* the name of the parameter dump file */
 
 /* param_parser uses a soft ASSERTM (print + exit(0)) for user-facing parse
@@ -763,7 +765,7 @@ uns add_all_command_line_args_to_end_of_arg_list(char** arg_list, uns arg_list_i
  * is in both PARAMS.in and the command line, then PARAMS.in is ignored
  */
 uns get_param_file_args_and_command_line_args(char*** arg_list_ptr, int argc, char* argv[]) {
-  FILE* param_file_fp = fopen(ARG_FILE_IN, "r"); /*The PARAMS.in file*/
+  FILE* param_file_fp = fopen(scarab_params_file, "r"); /*The PARAMS.in file*/
   uns param_file_arg_count = 0;                  /*Count arguments in param file (like argc for
                                                     the command line)*/
   char** arg_list = NULL;

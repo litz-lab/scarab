@@ -10,6 +10,9 @@ project(scarab C CXX ASM)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(SCARAB_ENABLE_LTO "Link-time optimization for the scarab executable" ON)
+# Scarab linked into the PIN tool (pin/pin_exec/in_pin.cc, make in_pin): a static library of
+# position-independent code, built with the Pin kit's runtime compilers, instead of the executable.
+option(SCARAB_IN_PIN "Build scarab as a library for the PIN tool" OFF)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
@@ -17,6 +20,18 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(flags_enable_pt_memtrace "")
+
+if(SCARAB_IN_PIN)
+  if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
+    message(FATAL_ERROR "SCARAB_IN_PIN does not support PT memtrace (unset SCARAB_ENABLE_PT_MEMTRACE)")
+  endif()
+  add_compile_options(-fPIC -DSCARAB_IN_PIN)
+  # PIN's runtime has no system include path; boost is header-only, so expose just its directory
+  find_path(SCARAB_BOOST_INCLUDE boost/version.hpp PATHS /usr/include /usr/local/include NO_DEFAULT_PATH REQUIRED)
+  file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/in_pin_include)
+  file(CREATE_LINK ${SCARAB_BOOST_INCLUDE}/boost ${CMAKE_BINARY_DIR}/in_pin_include/boost SYMBOLIC)
+  include_directories(SYSTEM ${CMAKE_BINARY_DIR}/in_pin_include)
+endif()
 
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   # HAS_LZ4: lz4_file_reader dispatch for .trace.lz4 memtraces (lz4 is already
@@ -74,7 +89,9 @@ add_compile_options(
 )
 
 add_subdirectory(pin/pin_lib)
-add_subdirectory(pin/pin_exec/testing)
+if(NOT SCARAB_IN_PIN)
+  add_subdirectory(pin/pin_exec/testing)
+endif()
 
 set(scarab_dirs bp debug bp/template_lib dvfs frontend globals isa libs memory power prefetcher confidence .)
 if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
@@ -91,9 +108,12 @@ foreach(dir IN LISTS scarab_dirs)
     set(srcs ${srcs} ${dir_srcs})
 endforeach()
 
-add_executable(scarab 
-    ${srcs}
-)
+if(SCARAB_IN_PIN)
+  add_library(scarab STATIC ${srcs})
+  set_target_properties(scarab PROPERTIES OUTPUT_NAME scarab_in_pin)
+else()
+  add_executable(scarab ${srcs})
+endif()
 
 target_sources(scarab PRIVATE
   $<$<CONFIG:Debug>:${CMAKE_CURRENT_BINARY_DIR}/asan_default_options.cc>
@@ -122,7 +142,7 @@ if(DEFINED ENV{SCARAB_ENABLE_PT_MEMTRACE})
   target_link_libraries(scarab PRIVATE dynamorio pt_memtrace)
 endif()
 
-if(SCARAB_ENABLE_LTO)
+if(SCARAB_ENABLE_LTO AND NOT SCARAB_IN_PIN)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT _scarab_lto_ok OUTPUT _scarab_lto_reason LANGUAGES C CXX)
   if(_scarab_lto_ok AND CMAKE_C_COMPILER_ID STREQUAL "GNU")

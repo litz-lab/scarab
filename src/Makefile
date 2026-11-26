@@ -16,7 +16,7 @@ CXX ?= g++
 
 TARGETS := opt opt-avx dbg vgr gpf
 
-.PHONY: all default clean clean_pin_exec pin_exec $(TARGETS) $(subst %, clean%, $(TARGETS))
+.PHONY: all default clean clean_pin_exec pin_exec in_pin $(TARGETS) $(subst %, clean%, $(TARGETS))
 
 default: opt
 
@@ -39,6 +39,17 @@ gpf: $(BUILD_DIR_PREFIX)/gpf/scarab_phony ## Build Scarab in Gprof mode
 
 pin_exec:
 	make SCARAB_DIR=$(SRCPWD) pin_exec --directory pin/pin_exec	 --no-print-directory
+
+# Scarab linked into the PIN tool (pin/pin_exec/in_pin.cc): scarab as a library built with the Pin 4 kit's
+# runtime compilers (PIN_ROOT), then pin_exec.so with it in pin/pin_exec/obj-in-pin/.
+PINRT_BIN = $(PIN_ROOT)/intel64/pinrt/bin
+in_pin: gitrev ## Build the PIN tool with scarab inside it (needs a Pin 4 kit in PIN_ROOT)
+	mkdir -p $(BUILD_DIR_PREFIX)/in_pin
+	cd $(BUILD_DIR_PREFIX)/in_pin && env -u SCARAB_ENABLE_PT_MEMTRACE CC=$(PINRT_BIN)/pin-gcc CXX=$(PINRT_BIN)/pin-g++ \
+	  $(CMAKE) ../.. -DCMAKE_BUILD_TYPE=SCARABOPT -DSCARAB_IN_PIN=ON
+	env -u SCARAB_ENABLE_PT_MEMTRACE make -j --no-print-directory -C $(BUILD_DIR_PREFIX)/in_pin scarab
+	make SCARAB_DIR=$(SRCPWD) SCARAB_IN_PIN_LIB=$(SRCPWD)/$(BUILD_DIR_PREFIX)/in_pin OBJDIR=obj-in-pin/ pin_exec \
+	  --directory pin/pin_exec --no-print-directory
 
 clean_pin_exec:
 	make --directory pin/pin_exec clean --no-print-directory

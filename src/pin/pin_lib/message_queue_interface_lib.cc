@@ -256,6 +256,9 @@ Server::Server(const std::string& _socket_path, uint32_t numClients) {
 }
 
 Server::~Server() {
+#ifdef SCARAB_IN_PIN
+  return;
+#endif
   for(uint32_t i = 0; i < client_fds.size(); ++i) {
     close(client_fds[i]);
   }
@@ -264,6 +267,10 @@ Server::~Server() {
 
 void Server::init(uint32_t numClients) {
   is_server = true;
+#ifdef SCARAB_IN_PIN
+  client_fds.assign(numClients, -1);  // no socket: one in-process client per core
+  return;
+#endif
   create_socket_file_descriptor();
   setup_unix_sockaddr_struct();
   bind_socket_to_file();
@@ -324,7 +331,7 @@ void Server::get_requested_client_id(uint32_t current_client_id) {
 }
 
 void Server::wait_for_client_to_close(uint32_t client_id) {
-#if !defined(PIN_COMPILE) || defined(GTEST_COMPILE)
+#if (!defined(PIN_COMPILE) || defined(GTEST_COMPILE)) && !defined(SCARAB_IN_PIN)
   char     buffer[RECEIVE_BUFFER_MAX_SIZE];
   uint32_t bytes_recv = recv(client_fds[client_id], buffer, sizeof(buffer),
                              MSG_PEEK);
@@ -359,6 +366,9 @@ void Server::verify_and_assign_requested_client_ids(uint32_t numClients) {
 }
 
 void Server::disconnect(uint32_t client_id) {
+#ifdef SCARAB_IN_PIN
+  return;
+#endif
   assertm(client_id < client_fds.size(),
           "Attempting to disconnect from an invalid client_id!");
   TCPSocket::disconnect(client_fds[client_id]);
@@ -386,6 +396,9 @@ Client::~Client() {}
 void Client::init(uint32_t requested_client_id) {
   is_server = false;
   client_id = requested_client_id;
+#ifdef SCARAB_IN_PIN
+  return;
+#endif
   create_socket_file_descriptor();
   setup_unix_sockaddr_struct();
   connect_to_server();
@@ -394,6 +407,9 @@ void Client::init(uint32_t requested_client_id) {
 }
 
 void Client::disconnect() {
+#ifdef SCARAB_IN_PIN
+  return;
+#endif
   TCPSocket::disconnect(socket_fd);
 }
 

@@ -119,7 +119,7 @@ void check_if_region_written_to(ADDRINT write_addr) {
       }
     } else {
       // not in the table: mapped after the last snapshot (e.g. PIN's own heap)
-      on_wrongpath_nop_mode     = true;
+      on_wrongpath_nop_mode = true;
       wrongpath_nop_mode_reason = WPNM_REASON_WRONG_PATH_STORE_TO_NEW_REGION;
     }
   } else {

@@ -28,6 +28,7 @@
 
 Scarab_To_Pin_Msg get_scarab_cmd();
 void              insert_scarab_op_in_buffer(compressed_op& cop);
+bool scarab_buffer_ends_at_cf();
 bool              scarab_buffer_full();
 void              scarab_send_buffer();
 void              scarab_clear_all_buffers();

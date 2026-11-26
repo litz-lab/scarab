@@ -37,7 +37,14 @@ void insert_scarab_op_in_buffer(compressed_op& cop) {
   scarab_op_buffer.push_back(cop);
 }
 
+bool scarab_buffer_ends_at_cf() {
+  return lazy_ctxt && !scarab_op_buffer.empty() &&
+         (scarab_op_buffer.back().st.cf_type != NOT_CF || scarab_op_buffer.back().st.is_repeat);
+}
+
 bool scarab_buffer_full() {
+  if (scarab_buffer_ends_at_cf())
+    return true;
   return scarab_op_buffer.size() > (max_buffer_size - 2);
   // Two spots are always reserved in the buffer just in case the
   // exit syscall and sentinel nullop are

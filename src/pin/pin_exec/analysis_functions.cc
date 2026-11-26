@@ -96,6 +96,8 @@ void process_syscall(ADDRINT ip, ADDRINT num, ADDRINT arg0, ADDRINT arg1,
     // is actually created and buffered for sending.
 
     main_loop();
+    if (redirect_pending)
+      return;
     finish_before_ins_all(true);
   }
 }
@@ -212,6 +214,8 @@ void finish_before_ins_all(bool from_syscall) {
               on_wrongpath);
     generate_dummy_nops = true;
     main_loop();
+    if (redirect_pending)
+      return;  // do_pending_redirect continues
     if(!wpnm_skip_ckp) {
       next_eip = ADDR_MASK(next_eip);
 
@@ -277,6 +281,8 @@ void after_ins_restage_op(ADDRINT iaddr) {
 void before_ins_no_mem(const CONTEXT* ctxt) {
   if(!fast_forward_count) {
     main_loop();
+    if (redirect_pending)
+      return;
 
     next_eip = ADDR_MASK(next_eip);
 
@@ -296,6 +302,8 @@ void before_ins_one_mem(const CONTEXT* ctxt, ADDRINT write_addr, UINT32 write_si
   write_addr = ADDR_MASK(write_addr);
   if(!fast_forward_count) {
     main_loop();
+    if (redirect_pending)
+      return;
 
     next_eip = ADDR_MASK(next_eip);
 
@@ -316,6 +324,8 @@ void before_ins_multi_mem(const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_ac
                           bool save_ctxt) {
   if(!fast_forward_count) {
     main_loop();
+    if (redirect_pending)
+      return;
 
     next_eip = ADDR_MASK(next_eip);
 

@@ -26,6 +26,7 @@
 
 // Communicates with scarab, and performs the requested actions
 void main_loop();
+void do_pending_redirect(const CONTEXT* ctxt);
 
 bool do_fe_retire(Scarab_To_Pin_Msg& cmd);
 

@@ -87,8 +87,7 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins);
 void print_err_if_invalid(ctype_pin_inst* info, const INS& ins);
 
 void get_opcode(UINT32 opcode);
-void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
-                            PIN_MULTI_MEM_ACCESS_INFO* mem_access_info);
+void get_gather_scatter_eas(bool is_gather, const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_access_info);
 void get_ld_ea(ADDRINT addr, UINT32 size);
 void get_ld_ea2(ADDRINT addr1, ADDRINT addr2, UINT32 size);
 void get_st_ea(ADDRINT addr);
@@ -189,9 +188,8 @@ void insert_analysis_functions(ctype_pin_inst* info, const INS& ins) {
   }
 
   if(INS_IsVgather(ins) || INS_IsVscatter(ins)) {
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_gather_scatter_eas,
-                   IARG_BOOL, INS_IsVgather(ins), IARG_CONTEXT,
-                   IARG_MULTI_MEMORYACCESS_EA, IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_gather_scatter_eas, IARG_BOOL, INS_IsVgather(ins),
+                   IARG_CONST_CONTEXT, IARG_MULTI_MEMORYACCESS_EA, IARG_END);
   } else {
     if(INS_IsMemoryRead(ins)) {
       if(INS_HasMemoryRead2(ins)) {
@@ -318,8 +316,7 @@ void create_compressed_op(ADDRINT iaddr, ctype_pin_inst* info) {
 
 static uint64_t read_ld_data(ADDRINT addr, UINT32 size);
 
-void get_gather_scatter_eas(bool is_gather, CONTEXT* ctxt,
-                            PIN_MULTI_MEM_ACCESS_INFO* mem_access_info) {
+void get_gather_scatter_eas(bool is_gather, const CONTEXT* ctxt, PIN_MULTI_MEM_ACCESS_INFO* mem_access_info) {
   const vector<PIN_MEM_ACCESS_INFO> gather_scatter_mem_access_infos =
     get_gather_scatter_mem_access_infos_from_gather_scatter_info(
       ctxt, mem_access_info);

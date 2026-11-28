@@ -25,7 +25,7 @@
 #include "globals.h"
 
 // Communicates with scarab, and performs the requested actions
-void main_loop(CONTEXT* ctxt);
+void main_loop(const CONTEXT* ctxt);
 
 bool do_fe_retire(Scarab_To_Pin_Msg& cmd);
 

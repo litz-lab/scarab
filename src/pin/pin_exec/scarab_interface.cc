@@ -45,7 +45,8 @@ bool scarab_buffer_full() {
 }
 
 void scarab_send_buffer() {
-  Message<ScarabOpBuffer_type> message = scarab_op_buffer;
+  static Message<ScarabOpBuffer_type> message;  // reused: keeps its buffer across sends
+  message = scarab_op_buffer;
   DBG_PRINT(uid_ctr, dbg_print_start_uid, dbg_print_end_uid,
             "START: Sending message to Scarab.\n");
   scarab->send(message);

@@ -119,6 +119,8 @@ Counter period_ID = 0;
 Flag* warmup_dump_done;
 
 time_t sim_start_time; /* the time that the simulator was started */
+Flag roi_dump_began = FALSE; /* inside a scarab ROI-marker dump (ROI_MARKER_DUMP) */
+Counter roi_dump_ID = 0;
 
 struct timespec sim_wall_mono_start;
 Flag sim_wall_mono_valid = FALSE;

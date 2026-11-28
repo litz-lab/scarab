@@ -1324,7 +1324,11 @@ Flag FDIP::determine_usefulness(Addr line_addr, Op* op, uint64_t ghist) {
     if (!cur_op->off_path)
       emit_new_prefetch = TRUE;
     else {
+#ifdef ENABLE_PT_MEMTRACE
       emit_new_prefetch = buf_map_find(proc_id, line_addr);
+#else
+      ASSERTM(proc_id, FALSE, "FDIP_PERFECT_PREFETCH needs the trace frontend's off-path line map\n");
+#endif
       if (emit_new_prefetch)
         STAT_EVENT(proc_id, FDIP_MEM_BUF_FOUND0 + 2 * bp_id);
       else
